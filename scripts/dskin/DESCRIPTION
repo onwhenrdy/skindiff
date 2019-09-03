@@ -1,0 +1,33 @@
+Package: dskin
+Title: Configuration and Evaluation of DSkin Simulations
+Version: 0.5.0
+Authors@R: person("Dominik", "Selzer", email = "d.selzer@scientific-consilience.com", role = c("aut", "cre"))
+Description: The package does provide functions to create DSkin configuration objects, functionality to evaluate the results of DSkin predictions and simulations. Easy plot creation for compartmental masses and concentrations is included. Possibility to create movies and gifs for mass-over-time and concentration-depth profiles-over-time are provided as well. This version includes the DSkin simulation tool.
+Depends: R (>= 3.4.0)
+License: file LICENCE
+Encoding: UTF-8
+LazyData: true
+SystemRequirements: C++11
+Collate:
+	dskin_helper.R
+	dskin_internal.R
+	dskin_params.R
+	dskin_data.R
+	dskin_plot.R
+	RcppExports.R
+	dskin_bindings.R
+Imports:
+	data.table,
+	DescTools,
+	doParallel,
+	foreach,
+	jsonlite,
+	Rcpp (>= 0.11.0)
+LinkingTo:
+	Rcpp
+RoxygenNote: 6.1.1
+Suggests: 
+  knitr,
+  rmarkdown
+VignetteBuilder: 
+  knitr
