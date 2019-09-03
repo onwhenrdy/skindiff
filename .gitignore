@@ -32,3 +32,4 @@
 *.app
 .hgignore
 scripts/dskin/.Rproj.user/*
+.Rproj.user
