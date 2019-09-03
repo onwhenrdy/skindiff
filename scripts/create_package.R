@@ -31,6 +31,7 @@ if (.Platform$OS.type == "windows")
   find_rtools()
 }
 
+pkgbuild::compile_dll()
 check.res <- check(quiet = FALSE)
 if (!is.null(check.res$errors) && length(check.res$errors) > 0)
 {

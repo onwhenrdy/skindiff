@@ -1,2 +1,2 @@
-PKG_CPPFLAGS = -O3 -Wno-sign-compare -pedantic -flto
-PKG_LIBS = -lz -O3 -flto
+PKG_CPPFLAGS += -O3 -Wno-sign-compare -pedantic
+PKG_LIBS += -lz -O3
