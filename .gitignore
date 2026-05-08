@@ -1,39 +1,33 @@
-# Prerequisites
+# Object/build artefacts
 *.d
-
-# Compiled Object files
-*.slo
-*.lo
 *.o
-*.obj
-
-# Precompiled Headers
+*.so
+*.dll
+*.dylib
+*.lo
+*.slo
 *.gch
 *.pch
-
-# Compiled Dynamic libraries
-*.so
-*.dylib
-*.dll
-
-# Fortran module files
-*.mod
-*.smod
-
-# Compiled Static libraries
-*.lai
-*.la
-*.a
 *.lib
-
-# Executables
+*.a
+*.la
+*.lai
 *.exe
 *.out
 *.app
+*.mod
+*.smod
 
-# stuff
-.hgignore
-scripts/dskin/.Rproj.user/*
-.Rproj.user
-scripts/dskin/man/*
+# R package build output
+*.Rcheck/
+*.tar.gz
+src/*.o
+src/*.so
+src/*.dll
+src/symbols.rds
+
+# Editors / IDEs
+.Rproj.user/
 .Rhistory
+.RData
+.Ruserdata

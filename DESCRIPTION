@@ -1,0 +1,22 @@
+Package: skindiff
+Title: Numerical Simulation of Drug Diffusion Through Skin
+Version: 0.6.0
+Authors@R: person("Dominik", "Selzer", email = "d.selzer@scientific-consilience.com",
+                  role = c("aut", "cre"))
+Description: Solves the one-dimensional diffusion equation through a stack of
+    skin compartments (vehicle / stratum corneum / deeper skin layers / sink)
+    using a Crank-Nicolson finite-difference scheme. Returns time-resolved mass
+    in each compartment together with concentration-depth profiles.
+License: file LICENSE
+Encoding: UTF-8
+Depends: R (>= 4.0.0)
+Imports:
+    Rcpp (>= 1.0.0)
+LinkingTo:
+    Rcpp,
+    testthat
+Suggests:
+    testthat (>= 3.0.0)
+SystemRequirements: C++17
+Config/testthat/edition: 3
+RoxygenNote: 7.3.2
