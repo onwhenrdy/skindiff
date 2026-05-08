@@ -32,11 +32,15 @@ namespace sc
         double sinkMassValue(const Sink& sink, const Geometry& geometry,
                              const std::vector<double>& concentrations, double scale)
         {
+            // The sink "cell" is virtual: its concentration is scaled by Vd/cell_vol
+            // (see initConcentrations) so that conc * cell_vol equals the true mass
+            // currently held by the PK compartment. For a perfect sink that's the
+            // cumulative mass that has crossed; for a PK sink it's that minus
+            // whatever has been eliminated.
             const auto idx  = sink.geo_from;
             const auto conc = concentrations[static_cast<std::size_t>(idx)];
             const auto ss   = geometry.spaceSteps()[static_cast<std::size_t>(idx)];
-            // Mass that has flowed into the (PK) compartment expressed in scaling units.
-            return conc * ss * sink.area_um2 * scale / sink.Vd;
+            return conc * ss * sink.area_um2 * scale;
         }
 
         // Sample concentration profile for a compartment in scaling units / ml.
