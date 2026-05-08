@@ -31,10 +31,20 @@ BEGIN_RCPP
     return rcpp_result_gen;
 END_RCPP
 }
+// cpp_run_tests
+Rcpp::RObject cpp_run_tests();
+RcppExport SEXP _skindiff_cpp_run_tests() {
+BEGIN_RCPP
+    Rcpp::RObject rcpp_result_gen;
+    rcpp_result_gen = Rcpp::wrap(cpp_run_tests());
+    return rcpp_result_gen;
+END_RCPP
+}
 
 static const R_CallMethodDef CallEntries[] = {
     {"_skindiff_cpp_validate", (DL_FUNC) &_skindiff_cpp_validate, 1},
     {"_skindiff_cpp_simulate", (DL_FUNC) &_skindiff_cpp_simulate, 2},
+    {"_skindiff_cpp_run_tests", (DL_FUNC) &_skindiff_cpp_run_tests, 0},
     {NULL, NULL, 0}
 };
 

@@ -9,3 +9,7 @@
     .Call(`_skindiff_cpp_simulate`, params, show_progress)
 }
 
+.cpp_run_tests <- function() {
+    .Call(`_skindiff_cpp_run_tests`)
+}
+

@@ -13,7 +13,8 @@ Depends: R (>= 4.0.0)
 Imports:
     Rcpp (>= 1.0.0)
 LinkingTo:
-    Rcpp
+    Rcpp,
+    testthat
 Suggests:
     testthat (>= 3.0.0)
 SystemRequirements: C++17
