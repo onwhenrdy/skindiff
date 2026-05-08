@@ -17,10 +17,24 @@ namespace sc
       public:
         enum class Method
         {
-            // Crank-style finite-difference scheme using element-edge concentrations.
-            // Currently the only supported scheme.
-            DSkin_1_4
+            // Crank-style finite-difference in the c (concentration) variable.
+            // Handles partition jumps via K_l/K_c factors in the stencil.
+            // Roughly first-order at K interfaces.
+            DSkin_1_4,
+
+            // Cell-centred finite volume in the activity variable u = c/K.
+            // u is continuous at partition interfaces, so harmonic-mean
+            // face conductances handle them naturally. Symmetric tri-diagonal
+            // (modulo the absorbing sink BC), second-order in the interior.
+            Activity_FVM
         };
+
+        // Whether `method` operates on activity (u = c/K) instead of c. Used
+        // by System to convert the state vector at the simulation boundaries.
+        [[nodiscard]] static bool isActivitySpace(Method m) noexcept
+        {
+            return m == Method::Activity_FVM;
+        }
 
         explicit MatrixBuilder(Method method = Method::DSkin_1_4) noexcept : m_method(method) {}
 

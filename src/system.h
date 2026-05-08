@@ -65,7 +65,16 @@ namespace sc
 
         Parameters               m_parameters;
         std::vector<Compartment> m_compartments;
+        // Internal state. For c-formulation methods (DSkin_1_4) this is the
+        // physical concentration in mg/um^3. For activity methods
+        // (Activity_FVM) it is u = c/K (activity); convert to c via
+        // m_K_per_cell. The sink cell follows the Vd-scaling convention
+        // either way (cell mass = c_sink_pk * Vd).
         std::vector<double>      m_concentrations;
+        // Per-cell K (1.0 everywhere for c-formulation, K_layer for activity
+        // -- with K_sink = 1 by convention). Multiply m_concentrations[i]
+        // by m_K_per_cell[i] to recover the physical concentration.
+        std::vector<double>      m_K_per_cell;
         Sink                     m_sink;
         Geometry                 m_geometry;
         MatrixBuilder            m_matrix_builder;

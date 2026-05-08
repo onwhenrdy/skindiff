@@ -12,6 +12,7 @@ skin_params(
   sim_time = 600L,
   resolution = 1L,
   disc_method = c("bk", "equidist"),
+  matrix_method = c("DSkin_1_4", "Activity_FVM"),
   eta = 0.6,
   max_module = 50,
   scaling = c("mg", "ug", "ng"),
@@ -52,6 +53,16 @@ sink.}
 
 \item{disc_method}{One of `"bk"` (refined Babucke-Kloker mesh) or
 `"equidist"`.}
+
+\item{matrix_method}{Discretization scheme used by the engine. One of:
+`"DSkin_1_4"` -- the legacy Crank-style finite-difference scheme in
+the c (concentration) variable, with K-jump corrections in the
+stencil; or `"Activity_FVM"` -- a cell-centred finite-volume scheme
+in the activity variable u = c/K. The activity scheme is symmetric,
+second-order in the bulk, and handles partition jumps cleanly. The
+default is currently `"DSkin_1_4"` for backward compatibility, but
+`"Activity_FVM"` is more accurate -- see `tests/testthat/test-
+analytical.R` for a side-by-side comparison.}
 
 \item{eta}{BK transition scaling factor, in `(0, 1]`. Ignored for
 `disc_method = "equidist"`.}

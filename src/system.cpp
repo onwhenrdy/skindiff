@@ -16,43 +16,55 @@ namespace sc
         // Convert ml -> um^3.
         constexpr double ml_to_um3(double v) noexcept { return v * 1.0e12; }
 
+        // Concentration `c` at cell idx, regardless of internal representation.
+        // For c-formulation methods K_per_cell is all 1's, so this is the
+        // identity. For activity methods (u-formulation) we recover c via
+        // c = u * K.
+        inline double cellConc(int idx, const std::vector<double>& state,
+                               const std::vector<double>& K_per_cell) noexcept
+        {
+            return state[static_cast<std::size_t>(idx)] *
+                   K_per_cell[static_cast<std::size_t>(idx)];
+        }
+
         double integrateMass(const Compartment& comp, const Geometry& geometry,
-                             const std::vector<double>& concentrations, double scale)
+                             const std::vector<double>& state,
+                             const std::vector<double>& K_per_cell, double scale)
         {
             const auto& ss = geometry.spaceSteps();
             double mass = 0.0;
             for (int i = comp.geo_from; i <= comp.geo_to; ++i)
             {
-                mass += concentrations[static_cast<std::size_t>(i)] *
-                        ss[static_cast<std::size_t>(i)];
+                mass += cellConc(i, state, K_per_cell) * ss[static_cast<std::size_t>(i)];
             }
             return mass * scale * comp.area_um2;
         }
 
         double sinkMassValue(const Sink& sink, const Geometry& geometry,
-                             const std::vector<double>& concentrations, double scale)
+                             const std::vector<double>& state,
+                             const std::vector<double>& K_per_cell, double scale)
         {
-            // The sink "cell" is virtual: its concentration is scaled by Vd/cell_vol
-            // (see initConcentrations) so that conc * cell_vol equals the true mass
-            // currently held by the PK compartment. For a perfect sink that's the
-            // cumulative mass that has crossed; for a PK sink it's that minus
-            // whatever has been eliminated.
+            // The sink "cell" is virtual: the stored value (whether c or u) is
+            // scaled by Vd/cell_vol (see initConcentrations) so that
+            //     stored * K_sink * cell_vol = true mass in the PK compartment.
+            // K_sink is 1 by convention, so cellConc(sink, ...) is the
+            // Vd-scaled value and the integrand is the true mass.
             const auto idx  = sink.geo_from;
-            const auto conc = concentrations[static_cast<std::size_t>(idx)];
             const auto ss   = geometry.spaceSteps()[static_cast<std::size_t>(idx)];
-            return conc * ss * sink.area_um2 * scale;
+            return cellConc(idx, state, K_per_cell) * ss * sink.area_um2 * scale;
         }
 
         // Sample concentration profile for a compartment in scaling units / ml.
         std::vector<double> sampleProfile(const Compartment& comp,
-                                          const std::vector<double>& concentrations, double scale)
+                                          const std::vector<double>& state,
+                                          const std::vector<double>& K_per_cell, double scale)
         {
             const auto n = static_cast<std::size_t>(comp.geo_to - comp.geo_from + 1);
             std::vector<double> result(n);
             for (std::size_t k = 0; k < n; ++k)
             {
-                const auto idx = static_cast<std::size_t>(comp.geo_from) + k;
-                result[k] = concentrations[idx] * scale * 1.0e12;  // mg/um^3 -> scaling/ml
+                const auto idx = comp.geo_from + static_cast<int>(k);
+                result[k] = cellConc(idx, state, K_per_cell) * scale * 1.0e12;
             }
             return result;
         }
@@ -130,15 +142,38 @@ namespace sc
 
     void System::initConcentrations()
     {
-        m_concentrations.assign(static_cast<std::size_t>(m_geometry.size()), 0.0);
+        const auto N = static_cast<std::size_t>(m_geometry.size());
+        const bool activity = MatrixBuilder::isActivitySpace(m_matrix_builder.method());
+
+        // Build the per-cell K vector.
+        m_K_per_cell.assign(N, 1.0);
+        if (activity)
+        {
+            for (const auto& comp : m_compartments)
+            {
+                for (int i = comp.geo_from; i <= comp.geo_to; ++i)
+                {
+                    m_K_per_cell[static_cast<std::size_t>(i)] = comp.K;
+                }
+            }
+            // Sink uses K = 1 (the activity in the receiver IS its concentration).
+            m_K_per_cell[static_cast<std::size_t>(m_sink.geo_from)] = 1.0;
+        }
+
+        // Initial state: c-values for c-formulation methods, u = c/K for activity.
+        m_concentrations.assign(N, 0.0);
         for (const auto& comp : m_compartments)
         {
+            const auto stored = activity ? (comp.c_init / comp.K) : comp.c_init;
             for (int i = comp.geo_from; i <= comp.geo_to; ++i)
             {
-                m_concentrations[static_cast<std::size_t>(i)] = comp.c_init;
+                m_concentrations[static_cast<std::size_t>(i)] = stored;
             }
         }
 
+        // Sink Vd-scaling: store cell value such that
+        //     stored * cell_volume = c_init_sink * Vd  (the true PK-compartment mass).
+        // K_sink = 1 so this is the same expression in both u- and c-spaces.
         const auto idx  = m_sink.geo_from;
         const auto ss   = m_geometry.spaceSteps()[static_cast<std::size_t>(idx)];
         const auto Vd_u = ml_to_um3(m_sink.Vd);
@@ -186,26 +221,30 @@ namespace sc
             if (m_mass_series[i].should_log(t))
             {
                 m_mass_series[i].record(
-                    t, integrateMass(m_compartments[i], m_geometry, m_concentrations, m_scale));
+                    t, integrateMass(m_compartments[i], m_geometry, m_concentrations,
+                                     m_K_per_cell, m_scale));
             }
             if (m_cdp_series[i].should_log(t))
             {
                 m_cdp_series[i].record(
-                    t, sampleProfile(m_compartments[i], m_concentrations, m_scale));
+                    t, sampleProfile(m_compartments[i], m_concentrations, m_K_per_cell, m_scale));
             }
         }
         if (m_sink_mass.should_log(t))
         {
-            m_sink_mass.record(t, sinkMassValue(m_sink, m_geometry, m_concentrations, m_scale));
+            m_sink_mass.record(t, sinkMassValue(m_sink, m_geometry, m_concentrations,
+                                                m_K_per_cell, m_scale));
         }
     }
 
     void System::replaceTopCompartment()
     {
         const auto& top = m_compartments.front();
+        const bool activity = MatrixBuilder::isActivitySpace(m_matrix_builder.method());
+        const auto stored = activity ? (top.c_init / top.K) : top.c_init;
         for (int i = top.geo_from; i <= top.geo_to; ++i)
         {
-            m_concentrations[static_cast<std::size_t>(i)] = top.c_init;
+            m_concentrations[static_cast<std::size_t>(i)] = stored;
         }
     }
 
@@ -222,6 +261,8 @@ namespace sc
 
         m_concentrations.erase(m_concentrations.begin(),
                                m_concentrations.begin() + top_size);
+        m_K_per_cell.erase(m_K_per_cell.begin(),
+                           m_K_per_cell.begin() + top_size);
 
         for (auto& c : m_compartments)
         {

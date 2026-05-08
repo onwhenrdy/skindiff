@@ -32,7 +32,8 @@ namespace
     MatrixBuilder::Method parseMatrixMethod(const std::string& s)
     {
         const auto v = mbMethodFromString(s);
-        if (!v) Rcpp::stop("Unknown matrix_method '" + s + "' (expected 'DSkin_1_4')");
+        if (!v) Rcpp::stop("Unknown matrix_method '" + s +
+                           "' (expected 'DSkin_1_4' or 'Activity_FVM')");
         return *v;
     }
 
