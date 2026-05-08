@@ -4,7 +4,7 @@
 #' @param show_progress If `TRUE`, prints a textual progress indicator while
 #'   the simulation runs. Defaults to `FALSE`.
 #'
-#' @return An object of class `"skin_result"` — a list containing:
+#' @return An object of class `"skin_result"` -- a list containing:
 #'
 #'   * `status`:    `"executed"`, `"stopped"`, or `"failed"`.
 #'   * `scaling`:   character; the mass unit reported in the result
@@ -97,7 +97,7 @@ summary.skin_result <- function(object, ...) {
   for (nm in names(mass_list)) {
     s <- mass_list[[nm]]
     if (length(s$time) != length(times) || !isTRUE(all.equal(s$time, times))) {
-      stop(sprintf("Mass time vectors disagree for compartment '%s' — log intervals must match.",
+      stop(sprintf("Mass time vectors disagree for compartment '%s' -- log intervals must match.",
                    nm), call. = FALSE)
     }
     cols[[nm]] <- s$value
