@@ -3,24 +3,20 @@
 
 #include "compartment.h"
 #include "geometry.h"
+#include "logger.h"
 #include "matrixbuilder.h"
 #include "parameter.h"
 #include "sink.h"
-#include "compartmentlog2d.h"
-#include "compartmentlog3d.h"
+
 #include <vector>
 
 namespace sc
 {
+    // Owns the discretized stack and the time-series loggers and runs the
+    // Crank-Nicolson time-stepping loop.
     class System
     {
       public:
-        enum class Status
-        {
-            Idle,
-            Runs
-        };
-
         enum class Result
         {
             Executed,
@@ -28,67 +24,61 @@ namespace sc
             Stopped
         };
 
-
-        System(const Parameter& parameter);
+        explicit System(Parameters parameters);
         virtual ~System() = default;
-
-        const std::vector<Compartment>& compartments() const;
-        const Sink& sink() const;
-        const Geometry& geometry() const;
-        const std::vector<double>& concentrations() const;
 
         Result run();
 
-        int simTime() const;
-        void setSimTime(int sim_time);
+        [[nodiscard]] const Parameters& parameters() const noexcept { return m_parameters; }
+        [[nodiscard]] const Geometry&   geometry()   const noexcept { return m_geometry; }
+        [[nodiscard]] const std::vector<Compartment>& compartments() const noexcept
+        {
+            return m_compartments;
+        }
+        [[nodiscard]] const Sink& sink() const noexcept { return m_sink; }
+        [[nodiscard]] const std::vector<double>& concentrations() const noexcept
+        {
+            return m_concentrations;
+        }
 
-        const CompartmentLog2D& sinkLogger() const;
-        const std::vector<CompartmentLog2D>& compartmentLogger() const;
-        const std::vector<CompartmentLog3D>& cdpLogger() const;
-        bool writeLogsToFiles() const;
-        const Parameter& parameter() const;
-
-      private:
-        void addCompartment(const Compartment& compartment);
-        void setSink(const Sink& sink);
-
-        void createGeometry(Geometry::DiscMethod method, int n_ss_per_um);
-        void createInitConcentrations(const Geometry& geometry,
-                                      const std::vector<Compartment>& compartments,
-                                      Sink* sink = nullptr);
-
-        void resetCompartmentConcentration(const Compartment& comp,
-                                           std::vector<double>& concentrations);
-        void removeTopCompartment();
-
-        void log(double time);
-        void initLogger();
+        [[nodiscard]] const std::vector<MassSeries>& compartmentMass() const noexcept
+        {
+            return m_mass_series;
+        }
+        [[nodiscard]] const MassSeries& sinkMass() const noexcept { return m_sink_mass; }
+        [[nodiscard]] const std::vector<CdpSeries>& cdp() const noexcept { return m_cdp_series; }
 
       protected:
-        virtual bool initRun();
-        virtual bool tearDownRun();
-        virtual void progressCallback(int current_iteration);
-        virtual bool testForStop(int current_iteration);
+        // Hooks for derived classes (e.g. R bindings) to inject progress / cancellation.
+        virtual bool initRun()                       { return true; }
+        virtual bool tearDownRun()                   { return true; }
+        virtual void progressCallback(int /*t*/)     {}
+        virtual bool testForStop(int /*t*/)          { return false; }
 
       private:
-        // data
+        void buildGeometryAndMatrices();
+        void initConcentrations();
+        void initLoggers();
+        void recordAt(double t);
+        void replaceTopCompartment();
+        void removeTopCompartment();
+
+        Parameters               m_parameters;
         std::vector<Compartment> m_compartments;
-        std::vector<double> m_concentrations;
-        Sink m_sink;
-        Geometry m_geometry;
-        MatrixBuilder m_matrix_builder;
+        std::vector<double>      m_concentrations;
+        Sink                     m_sink;
+        Geometry                 m_geometry;
+        MatrixBuilder            m_matrix_builder;
 
-        // logger
-        std::vector<CompartmentLog2D> m_compartment_logger;
-        CompartmentLog2D m_sink_logger;
-        std::vector<CompartmentLog3D> m_cdp_logger;
+        std::vector<MassSeries> m_mass_series;  // one per active compartment (incl. donor)
+        MassSeries              m_sink_mass;
+        std::vector<CdpSeries>  m_cdp_series;   // one per active compartment
 
-        // properties
-        Parameter m_parameter;
-        int m_sim_time;       // in min
-        int m_replace_after;  // in min
-        int m_remove_at;      // in min
-        double m_scale;       // sink scaling factor
+        int    m_sim_time      = 1;
+        int    m_replace_after = 0;
+        int    m_remove_at     = 0;
+        double m_scale         = 1.0;
     };
 }
-#endif  // SYSTEM_H
+
+#endif  // SC_SYSTEM_H

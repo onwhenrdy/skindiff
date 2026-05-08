@@ -1,61 +1,37 @@
 #ifndef SC_SINK_H
 #define SC_SINK_H
 
+#include <cmath>
 #include <string>
 
 namespace sc
 {
-    class Sink
+    // The bottom boundary of the compartment stack.
+    // Geometry indices are filled in by Geometry::create().
+    struct Sink
     {
-      public:
         enum class Type
         {
             Perfect_Sink,
             PK_Compartment
         };
 
-        Sink();
-        Sink(Type type, double A, double Vd, double t_half, const std::string& name);
+        std::string name;
+        Type   type     = Type::Perfect_Sink;
+        double area_um2 = 1.0;   // um^2
+        double Vd       = 1.0;   // ml
+        double t_half   = 1.0;   // min
+        double c_init   = 0.0;   // mg / um^3
 
-        Type type() const;
-        void setType(const Type& type);
+        int geo_from = 0;
+        int geo_to   = 0;
 
-        // in ml
-        double Vd() const;
-        void setVd(double Vd);
-
-        // in min
-        double t_half() const;
-        void setT_half(double t_half);
-
-        // in 1/min
-        double kEl() const;
-        void setkEl(double val);
-
-        std::string name() const;
-        void setName(const std::string& name);
-
-        // in um^2
-        double A() const;
-        void setA(double A);
-
-        int geometryFromIdx() const;
-        int geometryToIdx() const;
-        void setGeometryIdx(int from , int to);
-
-        // in mg/um^3
-        double cInit() const;
-        void setCinit(double c_init);
-
-    private:
-        std::string m_name;
-        Type m_type;
-        double m_A;       // in um^2
-        double m_Vd;      // in ml
-        double m_t_half;  // in min
-        int m_geo_from;
-        int m_geo_to;
-        double m_c_init;  // in mg/ml
+        // Elimination rate constant (1 / min)
+        [[nodiscard]] double kEl() const noexcept
+        {
+            return std::log(2.0) / t_half;
+        }
     };
 }
-#endif  // SINK_H
+
+#endif  // SC_SINK_H

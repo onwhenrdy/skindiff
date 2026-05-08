@@ -1,392 +1,251 @@
 #include "system.h"
+
 #include "algorithms.h"
-#include "helper.h"
-#include <iostream>
+
+#include <cassert>
+#include <utility>
 
 namespace sc
 {
-    System::System(const Parameter& parameter)
-        : m_sink_logger(parameter.systemParameter().matrixBuilderMethod(),
-                        parameter.vehicleParameter().appArea() * 1.E08)
-        , m_parameter(parameter)
-        , m_sim_time(1)
-        , m_replace_after(0)
-        , m_remove_at(0)
-        , m_scale(1.0)
-
+    namespace
     {
-        const auto& v_params     = parameter.vehicleParameter();
-        const auto& sys_params   = parameter.systemParameter();
-        const auto& sink_params  = parameter.sinkParameter();
-        const auto& pk_params    = parameter.pkParameter();
-        const auto& layer_params = parameter.layer_parameter();
-        const auto& log_params   = parameter.logParameter();
+        // Convert cm^2 -> um^2.
+        constexpr double cm2_to_um2(double cm2) noexcept { return cm2 * 1.0e8; }
+        // Convert mg/ml -> mg/um^3 (1 ml = 1e12 um^3).
+        constexpr double mg_per_ml_to_mg_per_um3(double v) noexcept { return v * 1.0e-12; }
+        // Convert ml -> um^3.
+        constexpr double ml_to_um3(double v) noexcept { return v * 1.0e12; }
 
-        // in minutes
-        m_replace_after = v_params.replaceAfter();
-        // in minutes
-        m_remove_at = v_params.removeAt();
-        // set sim time in minutes
-        this->setSimTime(sys_params.simulationTime());
-
-        // scaling (base is mg)
-        if (log_params.scaling() == LogParameter::Scaling::UG)
+        double integrateMass(const Compartment& comp, const Geometry& geometry,
+                             const std::vector<double>& concentrations, double scale)
         {
-            m_scale = 1.0E3;
-        }
-        else if (log_params.scaling() == LogParameter::Scaling::NG)
-        {
-            m_scale = 1.0E6;
-        }
-
-        m_matrix_builder.setMaxModule(sys_params.maxModule());
-
-        // add layers
-        // in um^2 from cm^2
-        const auto app_area = v_params.appArea() * 1.0E8;
-        Compartment donor(v_params.height(), v_params.D(), 1.0, app_area, v_params.name());
-        donor.setCInit(v_params.cInit() * 1E-12);  // im mg / um^3
-        donor.setFiniteDose(v_params.finiteDose());
-        this->addCompartment(donor);
-        for (const auto& layer : layer_params)
-        {
-            Compartment comp(layer.height(), layer.D(), layer.K(), app_area * layer.crossSection(),
-                             layer.name());
-            comp.setCInit(layer.cInit() * 1E-12);
-            this->addCompartment(comp);
-        }
-
-        Sink sink;
-        sink.setType(pk_params.enabled() ? Sink::Type::PK_Compartment : Sink::Type::Perfect_Sink);
-        sink.setA(app_area * (layer_params.empty() ? 1.0 : layer_params.back().crossSection()));
-        sink.setVd(sink_params.Vd());
-        sink.setT_half(pk_params.thalf() * 60.0);  // in minutes
-        sink.setName(sink_params.name());
-        sink.setCinit(sink_params.cInit() * 1E-12);
-        this->setSink(sink);
-
-        // generate Geometry
-        m_geometry.setEta(sys_params.eta());
-        this->createGeometry(sys_params.discMethod(), sys_params.resolution());
-
-        // create matrices
-        m_matrix_builder.setMethod(parameter.systemParameter().matrixBuilderMethod());
-        m_matrix_builder.buildMatrix(compartments(), m_geometry, &m_sink);
-
-        // init concentration vector
-        this->createInitConcentrations(m_geometry, m_compartments, &m_sink);
-
-        const auto& mass_postfix = parameter.logParameter().massFilePostfix();
-        const auto& cdp_postfix  = parameter.logParameter().CDPFilePostfix();
-        const auto& f_tag        = parameter.logParameter().tag();
-
-        const auto w_dir = log_params.workingDir();
-        // setup compartment logger
-        m_sink_logger.setName(m_sink.name() + " Logger");
-        m_sink_logger.setFilename(w_dir + f_tag + "_" + m_sink.name() + "_" + mass_postfix +
-                                  ".dat");
-        m_sink_logger.registerSink(&m_sink);
-        m_sink_logger.setAutoLogEnabled(sink_params.log());
-        m_sink_logger.setEnabled(m_sink_logger.autoLogEnabled());
-        m_sink_logger.setColumn2Name("conc");
-        m_sink_logger.setZip(log_params.gzipMass());
-        m_sink_logger.setLogInterval(log_params.massLogInterval());
-
-        int i = 0;
-        for (auto& comp : m_compartments)
-        {
-            CompartmentLog2D logger(m_parameter.systemParameter().matrixBuilderMethod(),
-                                    m_parameter.vehicleParameter().appArea() * 1.E8);
-            logger.setName(comp.name() + " logger");
-            logger.setFilename(w_dir + f_tag + "_" + comp.name() + "_" + mass_postfix + ".dat");
-            logger.registerCompartment(&comp);
-
-            const auto enabled = (i == 0) ? v_params.log() : layer_params[i - 1].log();
-            logger.setAutoLogEnabled(enabled);
-            logger.setEnabled(logger.autoLogEnabled());
-            logger.setZip(log_params.gzipMass());
-            logger.setLogInterval(log_params.massLogInterval());
-            m_compartment_logger.push_back(logger);
-            i++;
-        }
-
-        // setup cdp logger
-        i              = 0;
-        const auto& ss = m_geometry.spaceSteps();
-        for (auto& comp : m_compartments)
-        {
-            CompartmentLog3D logger;
-            logger.setName(comp.name() + " CDP logger");
-            logger.setFilename(w_dir + f_tag + "_" + comp.name() + "_" + cdp_postfix + ".dat");
-            logger.registerCompartment(&comp);
-
-            const auto enabled = (i == 0) ? v_params.logCDP() : layer_params[i - 1].logCDP();
-            logger.setAutoLogEnabled(enabled);
-            logger.setEnabled(logger.autoLogEnabled());
-            logger.setZip(log_params.gzipCDP());
-            logger.setLogInterval(log_params.CDPLogInterval());
-            logger.setConcentrationPosition(m_matrix_builder.method());
-            logger.setStepSizes(std::vector<double>(ss.begin() + comp.geometryFromIdx(),
-                                                    ss.begin() + comp.geometryToIdx() + 1));
-            m_cdp_logger.push_back(logger);
-            i++;
-        }
-    }
-
-    const std::vector<Compartment>& System::compartments() const
-    {
-        return m_compartments;
-    }
-
-    void System::addCompartment(const Compartment& compartment)
-    {
-        m_compartments.push_back(compartment);
-    }
-
-    const Sink& System::sink() const
-    {
-        return m_sink;
-    }
-
-    void System::setSink(const Sink& sink)
-    {
-        m_sink = sink;
-    }
-
-    void System::createGeometry(Geometry::DiscMethod method, int n_ss_per_um)
-    {
-        m_geometry.create(method, m_compartments, n_ss_per_um, &m_sink);
-    }
-
-    void System::createInitConcentrations(const Geometry& geometry,
-                                          const std::vector<Compartment>& compartments, Sink* sink)
-    {
-        m_concentrations.clear();
-        const auto c_size = geometry.spaceSteps().size();
-        m_concentrations.resize(c_size, 0.0);
-        for (const auto& comp : compartments)
-        {
-            const auto start_idx = comp.geometryFromIdx();
-            const auto stop_idx  = comp.geometryToIdx();
-            const auto comp_c    = comp.cInit();
-
-            for (int i = start_idx; i <= stop_idx; ++i)
+            const auto& ss = geometry.spaceSteps();
+            double mass = 0.0;
+            for (int i = comp.geo_from; i <= comp.geo_to; ++i)
             {
-                m_concentrations[i] = comp_c;
+                mass += concentrations[static_cast<std::size_t>(i)] *
+                        ss[static_cast<std::size_t>(i)];
+            }
+            return mass * scale * comp.area_um2;
+        }
+
+        double sinkMassValue(const Sink& sink, const Geometry& geometry,
+                             const std::vector<double>& concentrations, double scale)
+        {
+            const auto idx  = sink.geo_from;
+            const auto conc = concentrations[static_cast<std::size_t>(idx)];
+            const auto ss   = geometry.spaceSteps()[static_cast<std::size_t>(idx)];
+            // Mass that has flowed into the (PK) compartment expressed in scaling units.
+            return conc * ss * sink.area_um2 * scale / sink.Vd;
+        }
+
+        // Sample concentration profile for a compartment in scaling units / ml.
+        std::vector<double> sampleProfile(const Compartment& comp,
+                                          const std::vector<double>& concentrations, double scale)
+        {
+            const auto n = static_cast<std::size_t>(comp.geo_to - comp.geo_from + 1);
+            std::vector<double> result(n);
+            for (std::size_t k = 0; k < n; ++k)
+            {
+                const auto idx = static_cast<std::size_t>(comp.geo_from) + k;
+                result[k] = concentrations[idx] * scale * 1.0e12;  // mg/um^3 -> scaling/ml
+            }
+            return result;
+        }
+
+        // Cumulative mid-point depths (um) for the cells of a compartment, measured
+        // from the top of the compartment.
+        std::vector<double> compartmentDepths(const Compartment& comp, const Geometry& geometry)
+        {
+            const auto& ss = geometry.spaceSteps();
+            std::vector<double> depths;
+            depths.reserve(static_cast<std::size_t>(comp.geo_to - comp.geo_from + 1));
+
+            double pos = 0.0;
+            for (int i = comp.geo_from; i <= comp.geo_to; ++i)
+            {
+                const auto step = ss[static_cast<std::size_t>(i)];
+                depths.push_back(pos + step / 2.0);
+                pos += step;
+            }
+            return depths;
+        }
+    }
+
+    System::System(Parameters parameters)
+        : m_parameters(std::move(parameters))
+        , m_sim_time(m_parameters.sys.simulation_time)
+        , m_replace_after(m_parameters.vehicle.replace_after)
+        , m_remove_at(m_parameters.vehicle.remove_at)
+        , m_scale(scaleFactor(m_parameters.log.scaling))
+    {
+        const auto& v   = m_parameters.vehicle;
+        const auto& sys = m_parameters.sys;
+        const auto& sk  = m_parameters.sink;
+        const auto& pk  = m_parameters.pk;
+
+        m_matrix_builder.setMethod(sys.matrix_method);
+        m_matrix_builder.setMaxModule(sys.max_module);
+
+        // Vehicle / donor compartment.
+        const auto app_area_um2 = cm2_to_um2(v.app_area);
+        Compartment donor{v.height, v.D, 1.0, app_area_um2, v.name};
+        donor.c_init      = mg_per_ml_to_mg_per_um3(v.c_init);
+        donor.finite_dose = v.finite_dose;
+        m_compartments.push_back(std::move(donor));
+
+        // Skin layers.
+        for (const auto& l : m_parameters.layers)
+        {
+            Compartment c{l.height, l.D, l.K, app_area_um2 * l.cross_section, l.name};
+            c.c_init = mg_per_ml_to_mg_per_um3(l.c_init);
+            m_compartments.push_back(std::move(c));
+        }
+
+        // Sink.
+        m_sink.name     = sk.name;
+        m_sink.type     = pk.enabled ? Sink::Type::PK_Compartment : Sink::Type::Perfect_Sink;
+        m_sink.area_um2 = app_area_um2 *
+            (m_parameters.layers.empty() ? 1.0 : m_parameters.layers.back().cross_section);
+        m_sink.Vd     = sk.Vd;
+        m_sink.t_half = pk.thalf * 60.0;     // hours -> minutes
+        m_sink.c_init = mg_per_ml_to_mg_per_um3(sk.c_init);
+
+        m_geometry.setEta(sys.eta);
+        buildGeometryAndMatrices();
+        initConcentrations();
+        initLoggers();
+    }
+
+    void System::buildGeometryAndMatrices()
+    {
+        m_geometry.create(m_parameters.sys.disc_method, m_compartments,
+                          m_parameters.sys.resolution, &m_sink);
+        m_matrix_builder.buildMatrix(m_compartments, m_geometry, &m_sink);
+    }
+
+    void System::initConcentrations()
+    {
+        m_concentrations.assign(static_cast<std::size_t>(m_geometry.size()), 0.0);
+        for (const auto& comp : m_compartments)
+        {
+            for (int i = comp.geo_from; i <= comp.geo_to; ++i)
+            {
+                m_concentrations[static_cast<std::size_t>(i)] = comp.c_init;
             }
         }
 
-        if (sink)
+        const auto idx  = m_sink.geo_from;
+        const auto ss   = m_geometry.spaceSteps()[static_cast<std::size_t>(idx)];
+        const auto Vd_u = ml_to_um3(m_sink.Vd);
+        m_concentrations[static_cast<std::size_t>(idx)] =
+            m_sink.c_init * Vd_u / (ss * m_sink.area_um2);
+    }
+
+    void System::initLoggers()
+    {
+        const auto& v   = m_parameters.vehicle;
+        const auto& log = m_parameters.log;
+
+        m_mass_series.clear();
+        m_cdp_series.clear();
+        m_mass_series.resize(m_compartments.size());
+        m_cdp_series.resize(m_compartments.size());
+
+        for (std::size_t i = 0; i < m_compartments.size(); ++i)
         {
-            // in um
-            const auto ss = geometry.spaceSteps()[sink->geometryFromIdx()];
-            const auto A  = sink->A();            // in um^3
-            const auto Vd = sink->Vd() * 1.0E12;  // in um^3
-            m_concentrations[sink->geometryFromIdx()] = sink->cInit() * Vd / (ss * A);
+            const auto is_vehicle  = (i == 0);
+            const auto mass_enabled =
+                is_vehicle ? v.log_mass : m_parameters.layers[i - 1].log_mass;
+            const auto cdp_enabled =
+                is_vehicle ? v.log_cdp : m_parameters.layers[i - 1].log_cdp;
+
+            m_mass_series[i].enabled      = mass_enabled;
+            m_mass_series[i].log_interval = log.mass_log_interval;
+            m_mass_series[i].reserve_for_total(m_sim_time);
+
+            m_cdp_series[i].enabled      = cdp_enabled;
+            m_cdp_series[i].log_interval = log.cdp_log_interval;
+            m_cdp_series[i].depths_um    = compartmentDepths(m_compartments[i], m_geometry);
+            m_cdp_series[i].reserve_for_total(m_sim_time);
+        }
+
+        m_sink_mass.enabled      = m_parameters.sink.log_mass;
+        m_sink_mass.log_interval = log.mass_log_interval;
+        m_sink_mass.reserve_for_total(m_sim_time);
+    }
+
+    void System::recordAt(double t)
+    {
+        for (std::size_t i = 0; i < m_compartments.size(); ++i)
+        {
+            if (m_mass_series[i].should_log(t))
+            {
+                m_mass_series[i].record(
+                    t, integrateMass(m_compartments[i], m_geometry, m_concentrations, m_scale));
+            }
+            if (m_cdp_series[i].should_log(t))
+            {
+                m_cdp_series[i].record(
+                    t, sampleProfile(m_compartments[i], m_concentrations, m_scale));
+            }
+        }
+        if (m_sink_mass.should_log(t))
+        {
+            m_sink_mass.record(t, sinkMassValue(m_sink, m_geometry, m_concentrations, m_scale));
         }
     }
 
-    void System::resetCompartmentConcentration(const Compartment& comp,
-                                               std::vector<double>& concentrations)
+    void System::replaceTopCompartment()
     {
-        const auto start_idx = comp.geometryFromIdx();
-        const auto stop_idx  = comp.geometryToIdx();
-        const auto comp_c    = comp.cInit();
-        for (int i = start_idx; i <= stop_idx; ++i)
+        const auto& top = m_compartments.front();
+        for (int i = top.geo_from; i <= top.geo_to; ++i)
         {
-            concentrations[i] = comp_c;
+            m_concentrations[static_cast<std::size_t>(i)] = top.c_init;
         }
     }
 
     void System::removeTopCompartment()
     {
-        const auto top_comp = m_compartments[0];
+        const auto top      = m_compartments.front();
+        const auto top_size = top.geo_to + 1;
 
-        // remove compartment
         m_compartments.erase(m_compartments.begin());
+        if (!m_mass_series.empty()) m_mass_series.erase(m_mass_series.begin());
+        if (!m_cdp_series.empty())  m_cdp_series.erase(m_cdp_series.begin());
 
-        // rewire compartment logger
-        m_compartment_logger[0].registerCompartment(nullptr);
-        m_cdp_logger[0].registerCompartment(nullptr);
-        for (int i = 1; i < m_compartment_logger.size(); ++i)
-        {
-            m_compartment_logger[i].registerCompartment(&m_compartments[i - 1]);
-            m_cdp_logger[i].registerCompartment(&m_compartments[i - 1]);
-        }
+        m_geometry.remove(top.geo_from, top.geo_to + 1);
 
-        // adjust geometry
-        m_geometry.remove(top_comp.geometryFromIdx(), top_comp.geometryToIdx() + 1);
-
-        // adjust concentrations
         m_concentrations.erase(m_concentrations.begin(),
-                               m_concentrations.begin() + top_comp.geometryToIdx() + 1);
+                               m_concentrations.begin() + top_size);
 
-        // adjust compartment idxs
-        const auto top_comp_size = top_comp.geometryToIdx() + 1;
-        for (auto& comp : m_compartments)
+        for (auto& c : m_compartments)
         {
-            comp.setGeometryIdx(comp.geometryFromIdx() - top_comp_size,
-                                comp.geometryToIdx() - top_comp_size);
+            c.geo_from -= top_size;
+            c.geo_to   -= top_size;
         }
-        m_sink.setGeometryIdx(m_sink.geometryFromIdx() - top_comp_size,
-                              m_sink.geometryToIdx() - top_comp_size);
+        m_sink.geo_from -= top_size;
+        m_sink.geo_to   -= top_size;
 
-        // build new matrix
-        m_matrix_builder.buildMatrix(compartments(), m_geometry, &m_sink);
-    }
-
-    void System::log(double time)
-    {
-        m_sink_logger.log(time, m_geometry, m_concentrations, m_scale);
-        for (auto& logger : m_compartment_logger)
-        {
-            logger.log(time, m_geometry, m_concentrations, m_scale);
-        }
-
-        for (auto& logger : m_cdp_logger)
-        {
-            // we log in scale / ml
-            logger.log(time, m_concentrations, m_scale * 1.0E12);
-        }
-    }
-
-    void System::initLogger()
-    {
-        const auto s_time = this->simTime();
-        for (auto& logger : m_compartment_logger)
-        {
-            logger.setTimeHint(s_time);
-        }
-        m_sink_logger.setTimeHint(s_time);
-
-        for (auto& logger : m_cdp_logger)
-        {
-            logger.setTimeHint(s_time);
-        }
-    }
-
-    bool System::initRun()
-    {
-        return true;
-    }
-
-    bool System::tearDownRun()
-    {
-        return true;
-    }
-
-    void System::progressCallback(int current_iteration)
-    {
-        (void)current_iteration;
-        // do nothing
-    }
-
-    bool System::testForStop(int current_iteration)
-    {
-        (void)current_iteration;
-        return false;
-    }
-
-    const std::vector<CompartmentLog2D>& System::compartmentLogger() const
-    {
-        return m_compartment_logger;
-    }
-
-    bool System::writeLogsToFiles() const
-    {
-        bool ok = true;
-
-        // compartment logs
-        if (m_sink_logger.enabled())
-        {
-            ok = m_sink_logger.writeToFile();
-        }
-
-        if (ok)
-        {
-            for (const auto& logger : m_compartment_logger)
-            {
-                if (logger.enabled())
-                {
-                    ok = logger.writeToFile();
-                    if (!ok)
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-
-        // cdp logs
-        if (ok)
-        {
-            for (const auto& logger : m_cdp_logger)
-            {
-                if (logger.enabled())
-                {
-                    ok = logger.writeToFile();
-                    if (!ok)
-                    {
-                        break;
-                    }
-                }
-            }
-        }
-
-        return ok;
-    }
-
-    const Parameter& System::parameter() const
-    {
-        return m_parameter;
-    }
-
-    const CompartmentLog2D& System::sinkLogger() const
-    {
-        return m_sink_logger;
-    }
-
-    const std::vector<CompartmentLog3D>& System::cdpLogger() const
-    {
-        return m_cdp_logger;
-    }
-
-    int System::simTime() const
-    {
-        return m_sim_time;
-    }
-
-    void System::setSimTime(int sim_time)
-    {
-        if (sim_time >= 0)
-        {
-            m_sim_time = sim_time;
-        }
-    }
-
-    const std::vector<double>& System::concentrations() const
-    {
-        return m_concentrations;
+        m_matrix_builder.buildMatrix(m_compartments, m_geometry, &m_sink);
     }
 
     System::Result System::run()
     {
-        if (!this->initRun())
+        if (!initRun())
         {
             return Result::Failed;
         }
-        this->initLogger();
 
         auto n_ts       = m_matrix_builder.timesteps();
         auto rhs_matrix = m_matrix_builder.matrixRhs();
         auto lhs_matrix = m_matrix_builder.matrixLhs();
 
-        auto vehicle_removed    = false;
-        const auto must_replace = m_replace_after != 0;
-        const auto must_remove  = m_remove_at != 0;
+        bool vehicle_removed    = false;
+        const bool must_replace = m_replace_after != 0;
+        const bool must_remove  = m_remove_at != 0;
 
-        // main run loop
-        this->log(0);
+        recordAt(0.0);
 
         for (int t = 1; t <= m_sim_time; ++t)
         {
@@ -398,40 +257,31 @@ namespace sc
 
             for (int ts = 1; ts <= n_ts; ++ts)
             {
-                // rhs vector
                 rhs_matrix.inlineMultiply(m_concentrations);
                 algorithm::thomasReUseIP(lhs_matrix, m_concentrations);
             }
 
             if (must_replace && !vehicle_removed && t > 1 && t % m_replace_after == 0)
             {
-                // replace the first compartment
-                this->resetCompartmentConcentration(m_compartments[0], m_concentrations);
+                replaceTopCompartment();
             }
 
             if (must_remove && t == m_remove_at)
             {
                 vehicle_removed = true;
-                this->removeTopCompartment();
+                removeTopCompartment();
                 rhs_matrix = m_matrix_builder.matrixRhs();
                 lhs_matrix = m_matrix_builder.matrixLhs();
                 n_ts       = m_matrix_builder.timesteps();
             }
 
-            // log
-            this->log(t);
+            recordAt(static_cast<double>(t));
         }
 
-        if (!this->tearDownRun())
+        if (!tearDownRun())
         {
             return Result::Failed;
         }
-
         return Result::Executed;
-    }
-
-    const Geometry& System::geometry() const
-    {
-        return m_geometry;
     }
 }

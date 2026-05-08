@@ -5,51 +5,27 @@
 
 namespace sc
 {
-    class Compartment
+    // A single physical layer in the simulation stack (vehicle or skin layer).
+    // Geometry indices are filled in by Geometry::create().
+    struct Compartment
     {
-      public:
-        Compartment();
-        Compartment(int size, double D, double K, double A, const std::string& name);
+        std::string name;
+        int    height_um   = 0;     // physical thickness, in um
+        double D           = 1.0;   // um^2 / min
+        double K           = 1.0;   // partition coefficient relative to vehicle
+        double area_um2    = 1.0;   // cross-sectional area, in um^2
+        double c_init      = 0.0;   // mg / um^3
+        bool   finite_dose = true;
 
-        std::string name() const;
-        void setName(const std::string& name);
+        int geo_from = 0;  // first space-step index belonging to this compartment
+        int geo_to   = 0;  // last (inclusive)
 
-        // in um
-        int size() const;
-        void setSize(int size);
-
-        // in um^2/min
-        double D() const;
-        void setD(double D);
-
-        // in um^2
-        double A() const;
-        void setA(double A);
-
-        int geometryFromIdx() const;
-        int geometryToIdx() const;
-        void setGeometryIdx(int from , int to);
-
-        // in mg/um^3
-        double cInit() const;
-        void setCInit(double value);
-
-        double K() const;
-        void setK(double K);
-
-        bool finiteDose() const;
-        void setFiniteDose(bool finite_dose);
-
-    private:
-        std::string m_name;
-        int m_size;  // in um
-        double m_D;  // in um^2/min
-        double m_K;
-        double m_A;  // in um^2
-        int m_geo_from;
-        int m_geo_to;
-        double m_c_init; // in mg/um^3
-        bool m_finite_dose;
+        Compartment() = default;
+        Compartment(int height, double D_, double K_, double A_, std::string n)
+            : name(std::move(n)), height_um(height), D(D_), K(K_), area_um2(A_)
+        {
+        }
     };
 }
-#endif  // COMPARTMENT_H
+
+#endif  // SC_COMPARTMENT_H
