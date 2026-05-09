@@ -16,8 +16,14 @@ namespace sc
       public:
         enum class DiscMethod
         {
-            EQUI_DIST,  // Equidistant mesh
-            B_AND_K     // Grid refinement by Babucke & Kloker, 2009
+            EQUI_DIST,  // Equidistant mesh: same dx everywhere.
+            B_AND_K,    // Grid refinement by Babucke & Kloker, 2009: small
+                        // cells at compartment interfaces, uniform 1 um in
+                        // the bulk.
+            GRADED      // Per-compartment uniform mesh with dx_i scaled by
+                        // sqrt(D_i / D_min). High-D layers get coarser
+                        // cells; the smallest-D layer gets cells of size
+                        // 1/resolution.
         };
 
         Geometry() = default;

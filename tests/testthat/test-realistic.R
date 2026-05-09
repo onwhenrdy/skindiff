@@ -9,7 +9,7 @@
 #   - the run completes and produces finite, sensibly-ordered output,
 #   - the activity-jump diagnostic at the SC/DSL interface stays small.
 
-run_realistic <- function() {
+run_realistic <- function(disc_method = "bk") {
   skin_simulate(skin_params(
     vehicle = list(
       c_init   = 127.2727, height = 110L, D = 9.266667, app_area = 15.0,
@@ -28,7 +28,7 @@ run_realistic <- function() {
     pk   = list(enabled = TRUE, thalf = 24),
     sim_time      = 24 * 60L,
     resolution    = 4L,
-    disc_method   = "bk",
+    disc_method   = disc_method,
     scaling       = "ng",
     max_module    = 200
   ))
@@ -63,10 +63,34 @@ test_that("realistic SC/DSL/PK example runs and gives sane outputs", {
 })
 
 test_that("activity is continuous at the SC/DSL K-jump interface", {
-  res <- run_realistic()
+  res <- run_realistic("bk")
   jmp <- activity_jump(res)
   message(sprintf("[realistic:activity] u_sc_bot=%.4e  u_dsl_top=%.4e  rel_jump=%.3e",
                   jmp$u_sc_bot, jmp$u_dsl_top, jmp$rel_jump))
   # On this stack and resolution, baseline is ~5e-3.
   expect_lt(jmp$rel_jump, 0.02)
+})
+
+test_that("graded mesh agrees with bk on the realistic SC/DSL/PK example", {
+  # Graded uses far fewer cells in the high-D DSL and runs ~100x faster
+  # than bk while giving essentially the same physics. The activity-jump
+  # diagnostic at the SC/DSL interface is naturally larger with graded
+  # (the cells closest to the interface are coarser so cell-center u
+  # samples sit farther from the interface), but the cumulative blood
+  # mass at the end of the run agrees with bk to ~0.01%.
+  res_bk     <- run_realistic("bk")
+  res_graded <- run_realistic("graded")
+
+  blood_bk     <- tail(res_bk$mass$Blood, 1)
+  blood_graded <- tail(res_graded$mass$Blood, 1)
+  rel <- abs(blood_graded - blood_bk) / blood_bk
+  message(sprintf("[realistic:graded] blood_bk=%.4e  blood_graded=%.4e  rel=%.3e",
+                  blood_bk, blood_graded, rel))
+  expect_lt(rel, 1e-3)
+
+  # Activity-jump diagnostic on graded is larger (coarser cells at the
+  # interface) but still well below the c-formulation's ~15% artefact.
+  jmp_graded <- activity_jump(res_graded)
+  message(sprintf("[realistic:graded-jump] rel_jump=%.3e", jmp_graded$rel_jump))
+  expect_lt(jmp_graded$rel_jump, 0.05)
 })
