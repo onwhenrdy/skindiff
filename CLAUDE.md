@@ -22,11 +22,89 @@ There is no `disc_method`, no `matrix_method`, no `eta` parameter, no
 JSON parsing, no file I/O, and no PK extension on the sink. Results
 return as in-memory R lists.
 
+The R-facing surface covers more than just the simulator: parameter
+construction (strict-units), result post-processing (metrics +
+permeation curves), ggplot2 plotting, and parameter fitting from
+permeation/penetration data.
+
+Current version: **0.10.0**. R CMD check Status: OK.
+
+## Quick start
+
+Minimal end-to-end. All numeric inputs are units objects (helpers in
+`R/units.R`). Outputs (mass, concentration, cdp, geometry, runtime) are
+units-bearing too — strip with `as.numeric()` at boundaries that don't
+compose with units (e.g. `lm()`, `rowSums()`, raw plotting).
+
+```r
+library(skindiff)
+
+# Build a vehicle + 2-layer skin + perfect sink, run for 24 h
+veh <- vehicle(c_init = mg_per_ml(1.0), height = um(50), D = um2_per_min(1000))
+sc  <- layer("Stratum corneum", height = um(20),  D = um2_per_min(2),
+             K = 50, cross_section = 1.0, log_cdp = TRUE)
+der <- layer("Dermis",          height = um(120), D = um2_per_min(200),
+             K = 1.0, cross_section = 1.0, log_cdp = TRUE)
+
+p   <- skin_params(area = cm2(1), vehicle = veh, layers = list(sc, der),
+                   sink = perfect_sink("Receptor"),
+                   duration = hours(24L), resolution = 4L, scaling = "ug")
+res <- skin_simulate(p)
+
+# Derived quantities (Phase 3)
+metrics(res)              # one-row tibble: J_ss, t_lag, K_p, AUC, ...
+permeated(res)            # data.frame(time, Q) at the receptor
+profile_at(res, hours(8)) # depth profile slice at t = 8 h
+
+# Plots (Phase 4 -- requires ggplot2 in Suggests)
+library(ggplot2)
+autoplot(res, what = "permeated")
+autoplot(res, what = "profile", n_times = 6)
+
+# Fitting (Phase 5)
+perm <- permeation_obs(data.frame(
+  time       = hours(c(1, 2, 4, 8, 24)),
+  q_per_area = ug_per_cm2(c(0.05, 0.18, 0.42, 0.81, 1.6))
+))
+fit <- skin_fit(template = p,
+                observations = list(permeation = perm),
+                fit_pars     = list("Stratum corneum" = c("D", "K")))
+coef(fit)                 # named list of fitted D and K
+autoplot(fit)             # data + best-fit overlay
+```
+
+## API at a glance
+
+Twelve exported functions plus a family of unit helpers and S3 methods:
+
+| Group                | Functions |
+|---|---|
+| Unit helpers (R/units.R) | `um`, `mm`, `cm`, `cm2`, `mm2`, `ml`, `mg_per_ml`, `ug_per_ml`, `ng_per_ml`, `mg_per_cm2`, `ug_per_cm2`, `ng_per_cm2`, `um2_per_min`, `cm2_per_s`, `seconds`, `minutes`, `hours`, `days` |
+| Compartment builders | `vehicle()`, `layer()`, `perfect_sink()`, `finite_sink()` |
+| Composer + runner    | `skin_params()`, `skin_simulate()` |
+| Result accessors     | `permeated()`, `flux()`, `permeated_at()`, `profile_at()`, `metrics()` |
+| Observations + fit   | `permeation_obs()`, `penetration_obs()`, `skin_fit()`, `skin_params_from_fit()` |
+| S3 methods           | `print` for `skin_vehicle`/`skin_layer`/`skin_sink`/`skin_params`/`skin_result`/`permeation_obs`/`penetration_obs`/`skin_fit`; `summary` for `skin_result`/`skin_fit`; `coef`/`residuals`/`fitted` for `skin_fit`; `autoplot` for `skin_result`/`skin_fit` (in Suggests via `ggplot2::autoplot`) |
+
 ## Build and run
 
+Hard deps (`Imports` in `DESCRIPTION`): `Rcpp (>= 1.0.0)`, `cli (>= 3.6.0)`,
+`units (>= 0.8)`. Suggests (only needed for plotting and tests):
+`ggplot2 (>= 3.4.0)`, `testthat (>= 3.0.0)`. Install once:
+
 ```sh
-# install
+"/c/Program Files/R/R-4.5.2/bin/Rscript" -e \
+  'install.packages(c("Rcpp","cli","units","ggplot2","testthat","roxygen2"), repos="https://cloud.r-project.org")'
+```
+
+Standard rebuild loop:
+
+```sh
+# (re)generate Rcpp glue + roxygen
 "/c/Program Files/R/R-4.5.2/bin/Rscript" -e 'Rcpp::compileAttributes(".")'
+"/c/Program Files/R/R-4.5.2/bin/Rscript" -e 'roxygen2::roxygenise(".")'
+
+# install
 "/c/Program Files/R/R-4.5.2/bin/R" CMD INSTALL --no-multiarch .
 
 # build a tarball + R CMD check (must be Status: OK)
@@ -38,17 +116,26 @@ cd /tmp
 cat > /tmp/runtests.R << 'EOF'
 library(testthat)
 library(skindiff)
-test_dir("/c/github/skindiff/tests/testthat", reporter = "summary")
+test_dir("C:/github/skindiff/tests/testthat", reporter = "summary")
 EOF
 "/c/Program Files/R/R-4.5.2/bin/Rscript" /tmp/runtests.R
 ```
 
-If you edit `// [[Rcpp::export(...)]]` annotations in `src/`, rerun
-`Rcpp::compileAttributes(".")` to regenerate `src/RcppExports.cpp` and
-`R/RcppExports.R` before reinstalling.
+When to run what:
 
-If you edit roxygen comments above exported R functions, rerun
-`roxygen2::roxygenise(".")` to regenerate `man/*.Rd` and `NAMESPACE`.
+- Edited `// [[Rcpp::export(...)]]` in `src/` → `compileAttributes` first.
+- Edited roxygen above an exported R function → `roxygenise` (regenerates
+  `NAMESPACE` and `man/*.Rd`).
+- Edited only R bodies / non-exported helpers / C++ implementations →
+  just `R CMD INSTALL`.
+- The `roxygenise` step does a transient `pkgload::load_all()` and may
+  emit a one-line "Objekt 'autoplot' nicht gefunden" warning during
+  conditional S3 method registration of `autoplot.skin_result` /
+  `autoplot.skin_fit`. Harmless — the NAMESPACE entries are written
+  correctly and INSTALL succeeds.
+
+Note: `/tmp` resolves to Git's tmpdir under Bash but to `C:\Users\<u>\AppData\Local\Temp`
+under Windows R. Use absolute Windows paths inside `Rscript` invocations.
 
 ## Layout
 
@@ -559,13 +646,46 @@ rectangular.
   `.cpp_run_tests()` because `R_useDynamicSymbols(FALSE)` (set by
   `Rcpp::compileAttributes`) hides the raw `run_testthat_tests` symbol
   from R.
-- **R tests** use testthat 3.x (`Config/testthat/edition: 3`).
+- **R tests** use testthat 3.x (`Config/testthat/edition: 3`). Eleven
+  files cover the full surface:
+  - `test-cpp.R` — drives the C++ Catch tests via `.cpp_run_tests()`
+    (213 assertions, 5 cases).
+  - `test-params.R` — strict-units validation of `vehicle()`,
+    `layer()`, `perfect_sink()`, `finite_sink()`, `skin_params()` and
+    their print methods.
+  - `test-simulate.R` — end-to-end `skin_simulate()` behaviour, mass
+    conservation (rel err < 1e-10), monotonicity, finer-mesh
+    convergence at the sink.
+  - `test-analytical.R` — analytical battery (see below).
+  - `test-realistic.R` — the SC/DSL stack from the original
+    `scripts/example.R`, K-jump ratio ~9000, asserts the
+    activity-jump diagnostic at the K-interface stays under 5%.
+  - `test-events.R` — `replace_after` + `remove_at` end-to-end,
+    including mass-balance during refill and per-original-compartment
+    logger indexing.
+  - `test-metrics.R` — `permeated()`, `flux()`, `permeated_at()`,
+    `profile_at()`, `metrics()` against Crank closed-forms, plus
+    finite-sink AUC/`C_max`/`t_max` and the depletion-warning path.
+  - `test-plot.R` — `autoplot.skin_result` for each `what` value;
+    skipped if `ggplot2` not installed.
+  - `test-observations.R` — `permeation_obs()` and `penetration_obs()`
+    column/unit validation, multi-subject handling, point-vs-band
+    measurements.
+  - `test-fit.R` — `skin_fit()` synthetic round-trip recovery
+    (single-layer, partial-fit, two-layer with QSAR-fixed DSL,
+    penetration-only, multi-subject), plus all sanity-error and
+    warning paths.
+  - `helper-analytical.R` — Crank reference solutions
+    (`crank_single_slab_Q`, `crank_single_slab_C`,
+    `crank_two_layer_steady`, `crank_semi_infinite`) and Kasting
+    helpers (`kasting_eigenvalues`, `kasting_M_over_Minf`,
+    `kasting_membrane_C`).
 - **Analytical battery** (`test-analytical.R` + `helper-analytical.R`):
   validates against closed-form solutions from Crank, *Mathematics of
-  Diffusion*, and Kasting 2001 (J Pharm Sci 90:202). The battery covers
-  both the *receptor side* (cumulative mass / flux) and the *interior
-  CDP* (concentration vs depth, vs depth and time) for both
-  infinite-dose Dirichlet and finite-dose well-mixed-vehicle BVPs:
+  Diffusion*, and Kasting 2001 (J Pharm Sci 90:202). Covers both the
+  *receptor side* (cumulative mass / flux) and the *interior CDP*
+  (concentration vs depth, vs depth and time) for both infinite-dose
+  Dirichlet and finite-dose well-mixed-vehicle BVPs:
   - Crank single-slab cumulative `Q(t)` (eq. 4.24a) — `~1e-6` L_inf.
   - Crank single-slab transient CDP (eq. 4.16) — `~6e-4` L_inf at
     t=2 min, `< 1e-5` at later times, machine precision at steady state.
@@ -580,10 +700,6 @@ rectangular.
     `~1.4e-4` L_inf at early time, falling to `~3e-6` at mid-time.
   - Convergence-rate test asserts `rate ∈ (1.9, 2.1)` — clean
     second-order from a uniform mesh.
-- **Realistic** (`test-realistic.R`): the SC/DSL setup from the
-  original `scripts/example.R`, K-jump ratio ~9000, asserts the
-  activity-jump diagnostic at the K-interface stays under 5%.
-- **Events** (`test-events.R`): `replace_after` and `remove_at` end-to-end.
 
 ## Header-order trap to remember
 
@@ -592,6 +708,69 @@ In `test-runner.cpp`, **`Rcpp.h` must be included before `testthat.h`**.
 etc. as macros; if Rcpp.h comes after, those macros eat Rcpp's member
 functions of the same name and the build fails with a confusing
 `Nullable<T>::Rf_isNull(...)` overload resolution error.
+
+## Footguns and ecosystem quirks
+
+Things that bit during development; worth knowing before you fight them:
+
+- **`rowSums()` on a data.frame with units columns segfaults R.** Use
+  per-column addition instead (`a + b + c`). The simulator's internal
+  result reshaping avoids this; if user-side code ever needs it, strip
+  with `as.numeric()` first.
+- **`stats::lm`, `stats::approx`, `stats::optim` silently strip units.**
+  Loss functions and prediction interpolators drop units before calling
+  these and re-attach the canonical unit on the way out via
+  `units::set_units(..., mode = "standard")`.
+- **`ggplot2::layer()` masks `skindiff::layer()` if loaded *after*.**
+  Demo scripts and user code that uses both should `library(ggplot2)`
+  *before* `library(skindiff)`. The package itself is fine because all
+  internal calls are through the namespace.
+- **`cm()` masks `grDevices::cm`.** That's a single-line warning at
+  package load. `grDevices::cm` is an obscure inches-to-centimetres
+  helper; we accept the masking.
+- **`%` in roxygen comments must be escaped as `\%`** — Rd treats
+  unescaped `%` as a comment marker and silently eats the rest of the
+  line, including the closing brace. Caught once during Phase 3 docs.
+- **`units::deparse_unit()` returns UDUNITS canonical form** — e.g.
+  `"ng cm-2"`, not `"ng/cm^2"`. Test expectations should match the
+  canonical form, not the input string.
+- **`scale_fill_viridis_c(trans = "log10")` clips silently** if the
+  data spans more decades than the legend's chosen breaks. Set
+  `limits = c(c_min, c_max)` + `oob = scales::squish` explicitly to
+  show the actual range.
+- **`/tmp` resolves differently** under Bash (Git's tmpdir) and Rscript
+  on Windows (`C:\Users\<u>\AppData\Local\Temp`). Use absolute Windows
+  paths inside `Rscript -e '...'` and `ggsave(file.path(...))`.
+
+## Phase 5 data flow (fitting)
+
+```
+data (tidy data.frame)  ──►  permeation_obs / penetration_obs  ──►  classed obs
+                                                                          │
+template (skin_params or named list)  +  obs  +  fit_pars
+                                                                          │
+                                                                  skin_fit()
+                                                                  ├─ .normalise_template / .normalise_observations
+                                                                  ├─ .validate_fit_spec
+                                                                  │  (hard errors + warnings, defaults bounds)
+                                                                  ├─ .make_loss(template, obs, par_idx, weights, transform)
+                                                                  │  (per-subject simulate, predict permeation/penetration,
+                                                                  │   weighted residuals)
+                                                                  ├─ .run_optim
+                                                                  │  (L-BFGS-B in log(D)/log(K), n_starts random restarts)
+                                                                  ├─ .compute_se
+                                                                  │  (Hessian inversion + delta method back to physical units)
+                                                                  ├─ .predict_all
+                                                                  │  (per-obs predicted vs observed at the optimum)
+                                                                  └─ optional .bootstrap_ci
+                                                                          │
+                                                                  skin_fit object
+                                                                  ├─ par_table (estimate, SE, lower, upper)
+                                                                  ├─ predictions (per modality, per subject)
+                                                                  ├─ S3: print/summary/coef/residuals/fitted
+                                                                  ├─ skin_params_from_fit() → ready for skin_simulate()
+                                                                  └─ autoplot.skin_fit (ggplot2 overlay)
+```
 
 ## Coordinate / unit conventions in the engine
 
