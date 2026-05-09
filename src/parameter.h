@@ -68,7 +68,7 @@ namespace sc
     struct SystemParams
     {
         Geometry::DiscMethod  disc_method   = Geometry::DiscMethod::B_AND_K;
-        MatrixBuilder::Method matrix_method = MatrixBuilder::Method::DSkin_1_4;
+        MatrixBuilder::Method matrix_method = MatrixBuilder::Method::Activity_FVM;
         int    resolution      = 1;     // sub-steps per um
         double max_module      = 50.0;  // sub-step stability target
         double eta             = 0.6;   // BK transition scaling factor
