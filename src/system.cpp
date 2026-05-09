@@ -313,8 +313,7 @@ namespace sc
 
             for (int ts = 1; ts <= n_ts; ++ts)
             {
-                rhs_matrix.inlineMultiply(m_concentrations);
-                algorithm::thomasReUseIP(lhs_matrix, m_concentrations);
+                algorithm::crankNicolsonStepIP(rhs_matrix, lhs_matrix, m_concentrations);
             }
 
             if (must_replace && !vehicle_removed && t > 1 && t % m_replace_after == 0)
