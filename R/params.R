@@ -30,17 +30,6 @@
 #' @param resolution Mesh refinement: number of cells per micrometre.
 #' @param disc_method One of `"bk"` (refined Babucke-Kloker mesh) or
 #'   `"equidist"`.
-#' @param matrix_method Discretization scheme used by the engine. One of:
-#'   `"Activity_FVM"` (default) -- a cell-centred finite-volume scheme in
-#'   the activity variable `u = c/K`. Symmetric, second-order in the
-#'   bulk, and handles partition jumps cleanly because `u` is continuous
-#'   at interfaces by construction. Or `"DSkin_1_4"` -- the legacy Crank-
-#'   style finite-difference scheme in the c (concentration) variable,
-#'   with `K_l/K_c` corrections in the stencil. The legacy scheme has a
-#'   measurable activity-continuity artefact at K-jumps (~15% on a
-#'   realistic SC/DSL stack vs ~0.5% for `"Activity_FVM"`). See
-#'   `tests/testthat/test-analytical.R` and `test-realistic.R` for the
-#'   side-by-side comparison.
 #' @param eta BK transition scaling factor, in `(0, 1]`. Ignored for
 #'   `disc_method = "equidist"`.
 #' @param max_module Stability target for the implicit sub-step count.
@@ -60,7 +49,6 @@ skin_params <- function(
   sim_time = 600L,
   resolution = 1L,
   disc_method = c("bk", "equidist"),
-  matrix_method = c("Activity_FVM", "DSkin_1_4"),
   eta = 0.6,
   max_module = 50,
   scaling = c("mg", "ug", "ng"),
@@ -68,7 +56,6 @@ skin_params <- function(
   cdp_log_interval = 1L
 ) {
   disc_method <- match.arg(disc_method)
-  matrix_method <- match.arg(matrix_method)
   scaling <- match.arg(scaling)
 
   vehicle_l <- .normalize_vehicle(vehicle)
@@ -79,7 +66,6 @@ skin_params <- function(
   params <- list(
     sys = list(
       disc_method     = disc_method,
-      matrix_method   = matrix_method,
       resolution      = .as_int(resolution, "resolution", min_val = 1L),
       max_module      = .as_dbl(max_module, "max_module", min_val = 0, exclusive = TRUE),
       eta             = .as_dbl(eta, "eta", min_val = 0, max_val = 1, exclusive_min = TRUE),

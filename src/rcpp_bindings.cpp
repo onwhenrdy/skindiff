@@ -29,14 +29,6 @@ namespace
         return *v;
     }
 
-    MatrixBuilder::Method parseMatrixMethod(const std::string& s)
-    {
-        const auto v = mbMethodFromString(s);
-        if (!v) Rcpp::stop("Unknown matrix_method '" + s +
-                           "' (expected 'DSkin_1_4' or 'Activity_FVM')");
-        return *v;
-    }
-
     Scaling parseScaling(const std::string& s)
     {
         const auto v = scalingFromString(s);
@@ -48,7 +40,6 @@ namespace
     {
         SystemParams out;
         out.disc_method     = parseDiscMethod(pick<std::string>(sys, "disc_method", "bk"));
-        out.matrix_method   = parseMatrixMethod(pick<std::string>(sys, "matrix_method", "DSkin_1_4"));
         out.resolution      = pick<int>(sys,    "resolution",      1);
         out.max_module      = pick<double>(sys, "max_module",      50.0);
         out.eta             = pick<double>(sys, "eta",             0.6);

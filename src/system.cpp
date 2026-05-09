@@ -100,7 +100,6 @@ namespace sc
         const auto& sk  = m_parameters.sink;
         const auto& pk  = m_parameters.pk;
 
-        m_matrix_builder.setMethod(sys.matrix_method);
         m_matrix_builder.setMaxModule(sys.max_module);
 
         // Vehicle / donor compartment.
@@ -143,31 +142,28 @@ namespace sc
     void System::initConcentrations()
     {
         const auto N = static_cast<std::size_t>(m_geometry.size());
-        const bool activity = MatrixBuilder::isActivitySpace(m_matrix_builder.method());
 
-        // Build the per-cell K vector.
+        // Per-cell K, used to convert between the stored activity u and the
+        // physical concentration c = u * K. The sink uses K = 1 (its activity
+        // and concentration coincide).
         m_K_per_cell.assign(N, 1.0);
-        if (activity)
+        for (const auto& comp : m_compartments)
         {
-            for (const auto& comp : m_compartments)
+            for (int i = comp.geo_from; i <= comp.geo_to; ++i)
             {
-                for (int i = comp.geo_from; i <= comp.geo_to; ++i)
-                {
-                    m_K_per_cell[static_cast<std::size_t>(i)] = comp.K;
-                }
+                m_K_per_cell[static_cast<std::size_t>(i)] = comp.K;
             }
-            // Sink uses K = 1 (the activity in the receiver IS its concentration).
-            m_K_per_cell[static_cast<std::size_t>(m_sink.geo_from)] = 1.0;
         }
+        m_K_per_cell[static_cast<std::size_t>(m_sink.geo_from)] = 1.0;
 
-        // Initial state: c-values for c-formulation methods, u = c/K for activity.
+        // Initial activity in each compartment cell: u = c_init / K.
         m_concentrations.assign(N, 0.0);
         for (const auto& comp : m_compartments)
         {
-            const auto stored = activity ? (comp.c_init / comp.K) : comp.c_init;
+            const auto u_init = comp.c_init / comp.K;
             for (int i = comp.geo_from; i <= comp.geo_to; ++i)
             {
-                m_concentrations[static_cast<std::size_t>(i)] = stored;
+                m_concentrations[static_cast<std::size_t>(i)] = u_init;
             }
         }
 
@@ -239,12 +235,11 @@ namespace sc
 
     void System::replaceTopCompartment()
     {
-        const auto& top = m_compartments.front();
-        const bool activity = MatrixBuilder::isActivitySpace(m_matrix_builder.method());
-        const auto stored = activity ? (top.c_init / top.K) : top.c_init;
+        const auto& top  = m_compartments.front();
+        const auto u_init = top.c_init / top.K;
         for (int i = top.geo_from; i <= top.geo_to; ++i)
         {
-            m_concentrations[static_cast<std::size_t>(i)] = stored;
+            m_concentrations[static_cast<std::size_t>(i)] = u_init;
         }
     }
 
