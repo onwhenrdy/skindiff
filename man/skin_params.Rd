@@ -11,8 +11,6 @@ skin_params(
   pk = list(enabled = FALSE, thalf = 1),
   sim_time = 600L,
   resolution = 1L,
-  disc_method = c("graded", "bk", "equidist"),
-  eta = 0.6,
   max_module = 50,
   scaling = c("mg", "ug", "ng"),
   mass_log_interval = 1L,
@@ -48,23 +46,10 @@ sink.}
 
 \item{sim_time}{Total simulation time, integer, minutes.}
 
-\item{resolution}{Mesh refinement: number of cells per micrometre.}
-
-\item{disc_method}{One of:
-`"graded"` (default) -- per-compartment uniform mesh, with cell size
-scaled by `sqrt(D_i / D_min)`. The smallest-D compartment uses cells
-of size `1/resolution`; higher-D compartments get coarser cells,
-since their gradient scale in the activity variable is wider. Gives
-far fewer cells in high-D layers with no measurable loss of
-accuracy, and so a much smaller `max_module` and far fewer
-sub-steps per minute than the legacy meshes (~100x speed-up on
-stacks with wide-D ranges like SC/DSL).
-`"bk"` -- the legacy Babucke-Kloker mesh: small cells at compartment
-interfaces and uniform 1 um cells in the bulk.
-`"equidist"` -- uniform `1/resolution` um cells everywhere.}
-
-\item{eta}{BK transition scaling factor, in `(0, 1]`. Ignored for
-`disc_method = "equidist"`.}
+\item{resolution}{Mesh refinement: cells per micrometre at the
+smallest-D compartment. Higher-D compartments get proportionally
+coarser cells (`dx ∝ sqrt(D)`), since their gradient scale in the
+activity variable is wider.}
 
 \item{max_module}{Stability target for the implicit sub-step count.}
 

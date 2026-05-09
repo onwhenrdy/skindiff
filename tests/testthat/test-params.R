@@ -53,10 +53,6 @@ test_that("invalid layer cross_section is rejected", {
   )
 })
 
-test_that("invalid disc_method is rejected at the R level", {
-  expect_error(make_minimal(disc_method = "fancy"))
-})
-
 test_that("vehicle without app_area is rejected", {
   expect_error(make_minimal(vehicle = list(c_init = 1, height = 30L,
                                            D = 1, app_area = -1)),

@@ -2,16 +2,16 @@
 # (2nd ed.). The engine should reproduce these closed forms accurately on the
 # meshes we ship.
 #
-# Baseline numbers (BK mesh, Crank-Nicolson, Thomas-reuse, resolution = 4,
+# Baseline numbers (graded mesh, Crank-Nicolson, Thomas-reuse, resolution = 4,
 # true Dirichlet donor BC: all donor cells clamped + cell-edge alpha):
 #
-#   slab-lag-time L_inf  1.6e-5
+#   slab-lag-time L_inf  1.0e-6
 #   slab slope_rel       8.2e-5
-#   slab lag_rel         6.6e-4
-#   ss-2L L1 L_inf       1.4e-11   <- machine precision
-#   ss-2L L2 L_inf       1.4e-11   <- machine precision
-#   ss-2L slope_rel      8.2e-11
-#   erfc L_inf           1.7e-2
+#   slab lag_rel         7.0e-4
+#   ss-2L L1 L_inf       8.3e-13   <- machine precision
+#   ss-2L L2 L_inf       8.4e-13   <- machine precision
+#   ss-2L slope_rel      3.5e-12
+#   erfc L_inf           1.8e-2
 #   slab convergence     rate=2.00 <- clean 2nd-order, abs_err halves at
 #                                     each dx -> dx/2 refinement
 #
@@ -31,7 +31,6 @@
 run_dirichlet_skin <- function(layers_df, C0_mg_per_ml,
                                sim_time_min, scaling = "ng",
                                resolution = 4L,
-                               disc_method = "bk",
                                donor_D = 1e4,
                                sink_Vd_ml = 1.0) {
   skin_simulate(skin_params(
@@ -44,7 +43,6 @@ run_dirichlet_skin <- function(layers_df, C0_mg_per_ml,
     pk = list(enabled = FALSE),
     sim_time = sim_time_min,
     resolution = resolution,
-    disc_method = disc_method,
     scaling = scaling,
     max_module = 50
   ))
@@ -104,7 +102,7 @@ test_that("single-slab lag-time matches Crank 4.24a", {
                 sprintf("lag_rel=%.3e", lag_rel),
                 sprintf("(t_lag=%.3f, sim_lag=%.3f)", t_lag, intercept_sim))
 
-  expect_lt(errs_late["linf"], 1e-4)
+  expect_lt(errs_late["linf"], 1e-5)
   expect_lt(slope_rel,         1e-3)
   expect_lt(lag_rel,           1e-2)
 })
@@ -158,9 +156,9 @@ test_that("two-layer steady-state K-jump", {
 
   # Steady-state piecewise-linear profile in u is recovered exactly by the
   # symmetric tridiagonal -- machine precision is the right floor here.
-  expect_lt(errs1["linf"], 1e-9)
-  expect_lt(errs2["linf"], 1e-9)
-  expect_lt(slope_rel,     1e-9)
+  expect_lt(errs1["linf"], 1e-10)
+  expect_lt(errs2["linf"], 1e-10)
+  expect_lt(slope_rel,     1e-10)
 })
 
 
@@ -218,8 +216,7 @@ test_that("spatial convergence rate is roughly second order", {
   errs <- numeric(length(resolutions))
   for (k in seq_along(resolutions)) {
     res <- run_dirichlet_skin(layers, C0, sim_time, scaling = "ng",
-                              resolution = resolutions[k],
-                              disc_method = "equidist")
+                              resolution = resolutions[k])
     Q_per_area <- crank_single_slab_Q(res$mass$time, l = l, D = D,
                                       C_donor = C0_internal)
     expected_ng <- mg_per_um2_to_total(Q_per_area, app_area_cm2, "ng")

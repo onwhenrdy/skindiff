@@ -28,8 +28,7 @@ An object of class `"skin_result"` -- a list containing:
                  TRUE`. Each entry has `time`, `depth_um`, and a numeric
                  matrix `conc` indexed `[depth, time]`, in
                  `<scaling>/ml`.
-  * `geometry`:  list with `min_step_um`, `max_step_um`, `eta` (NA for
-                 the equidistant mesh), and `n_cells`.
+  * `geometry`:  list with `min_step_um`, `max_step_um`, and `n_cells`.
   * `params`:    the input parameters (unchanged).
   * `runtime_s`: wall-clock runtime in seconds.
 }

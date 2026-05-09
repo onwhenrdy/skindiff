@@ -74,7 +74,7 @@ R list  ──►  rcpp_bindings::parametersFromR  ──►  Parameters (struct
                                                         │
                                                   System(parameters)
                                                   ├─ builds Geometry
-                                                  │  (EQUI_DIST or B_AND_K mesh)
+                                                  │  (graded per-compartment mesh)
                                                   ├─ builds vector<Compartment>
                                                   │  (vehicle + skin layers)
                                                   ├─ builds Sink

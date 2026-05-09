@@ -16,7 +16,6 @@ namespace
     {
         Parameters p;
         p.sys.simulation_time = sim_time;
-        p.sys.disc_method     = Geometry::DiscMethod::EQUI_DIST;
         p.sys.resolution      = 1;
         p.log.scaling         = Scaling::MG;
         p.vehicle.c_init   = 1.0;
@@ -37,7 +36,7 @@ namespace
 
 context("Geometry")
 {
-    test_that("equidistant mesh assigns one cell per um per compartment")
+    test_that("equal-D compartments produce a uniform mesh at 1/ss_per_um")
     {
         Parameters p = trivialParams();
         std::vector<Compartment> comps;
@@ -51,7 +50,7 @@ context("Geometry")
         s.Vd       = 1.0;
 
         Geometry g;
-        const auto ok = g.create(Geometry::DiscMethod::EQUI_DIST, comps, 1, &s);
+        const auto ok = g.create(comps, 1, &s);
         expect_true(ok);
         // 30 vehicle cells + 20 SC cells + 1 sink cell = 51
         expect_true(g.size() == 51);
@@ -62,24 +61,27 @@ context("Geometry")
         expect_true(s.geo_from == 50);
     }
 
-    test_that("BK mesh adds refinement at compartment boundaries")
+    test_that("higher-D compartments get coarser cells")
     {
         Parameters p = trivialParams();
         std::vector<Compartment> comps;
-        comps.push_back(Compartment{p.vehicle.height, p.vehicle.D, 1.0,
+        comps.push_back(Compartment{p.vehicle.height, /*D=*/1.0, 1.0,
                                     p.vehicle.app_area * 1e8, p.vehicle.name});
-        comps.push_back(Compartment{p.layers[0].height, p.layers[0].D, p.layers[0].K,
+        // 4x larger D -> dx scaled by sqrt(4) = 2x.
+        comps.push_back(Compartment{p.layers[0].height, /*D=*/4.0, p.layers[0].K,
                                     p.vehicle.app_area * 1e8 * p.layers[0].cross_section,
                                     p.layers[0].name});
         Sink s;
         s.area_um2 = p.vehicle.app_area * 1e8;
 
         Geometry g;
-        g.setEta(0.6);
-        const auto ok = g.create(Geometry::DiscMethod::B_AND_K, comps, 4, &s);
+        const auto ok = g.create(comps, 4, &s);
         expect_true(ok);
-        expect_true(g.minSpaceStep() < 1.0);
-        expect_true(g.maxSpaceStep() == 1.0);
+        // First (smallest-D) compartment uses dx = 1/4 = 0.25 um.
+        // Second (4x D) compartment uses dx ~= 0.5 um.
+        expect_true(g.minSpaceStep() < g.maxSpaceStep());
+        expect_true(g.minSpaceStep() <= 0.26);    // 0.25 with rounding tol
+        expect_true(g.maxSpaceStep() >= 0.49);    // 0.5
     }
 }
 

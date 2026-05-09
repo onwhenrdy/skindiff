@@ -126,7 +126,6 @@ namespace sc
         m_sink.t_half = pk.thalf * 60.0;     // hours -> minutes
         m_sink.c_init = mg_per_ml_to_mg_per_um3(sk.c_init);
 
-        m_geometry.setEta(sys.eta);
         buildGeometryAndMatrices();
         initConcentrations();
         initLoggers();
@@ -134,8 +133,7 @@ namespace sc
 
     void System::buildGeometryAndMatrices()
     {
-        m_geometry.create(m_parameters.sys.disc_method, m_compartments,
-                          m_parameters.sys.resolution, &m_sink);
+        m_geometry.create(m_compartments, m_parameters.sys.resolution, &m_sink);
         m_matrix_builder.buildMatrix(m_compartments, m_geometry, &m_sink);
     }
 

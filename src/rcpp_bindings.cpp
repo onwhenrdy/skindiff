@@ -22,13 +22,6 @@ namespace
         return Rcpp::as<T>(s);
     }
 
-    Geometry::DiscMethod parseDiscMethod(const std::string& s)
-    {
-        const auto v = discMethodFromString(s);
-        if (!v) Rcpp::stop("Unknown disc_method '" + s + "' (expected 'equidist' or 'bk')");
-        return *v;
-    }
-
     Scaling parseScaling(const std::string& s)
     {
         const auto v = scalingFromString(s);
@@ -39,10 +32,8 @@ namespace
     SystemParams readSys(const Rcpp::List& sys)
     {
         SystemParams out;
-        out.disc_method     = parseDiscMethod(pick<std::string>(sys, "disc_method", "bk"));
         out.resolution      = pick<int>(sys,    "resolution",      1);
         out.max_module      = pick<double>(sys, "max_module",      50.0);
-        out.eta             = pick<double>(sys, "eta",             0.6);
         out.simulation_time = pick<int>(sys,    "simulation_time", 600);
         return out;
     }
@@ -237,9 +228,6 @@ namespace
         return Rcpp::List::create(
             Rcpp::Named("min_step_um") = g.minSpaceStep(),
             Rcpp::Named("max_step_um") = g.maxSpaceStep(),
-            Rcpp::Named("eta")         = (g.discMethod() == Geometry::DiscMethod::B_AND_K)
-                                             ? Rcpp::wrap(g.calculatedEta())
-                                             : Rcpp::wrap(NA_REAL),
             Rcpp::Named("n_cells")     = g.size());
     }
 }  // namespace

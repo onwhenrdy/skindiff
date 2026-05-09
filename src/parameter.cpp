@@ -87,7 +87,6 @@ namespace sc
             if (s.resolution      <= 0)             return "sys.resolution <= 0";
             if (s.max_module      <= 0.0)           return "sys.max_module <= 0";
             if (s.simulation_time <= 0)             return "sys.simulation_time <= 0";
-            if (s.eta <= 0.0 || s.eta > 1.0)        return "sys.eta not in (0, 1]";
             return std::nullopt;
         }
 
