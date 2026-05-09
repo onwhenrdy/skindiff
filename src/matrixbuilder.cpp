@@ -191,14 +191,29 @@ namespace sc
             }
         }
 
-        // Infinite-dose donor (concentration clamped at the top boundary).
+        // Infinite-dose donor: hold every donor cell at its initial value.
+        // (The previous implementation only clamped cell 0, which left donor
+        // cells 1..N free to drift slightly during transients. Clamping the
+        // full compartment makes the donor act as a true Dirichlet reservoir
+        // at c_init throughout, regardless of D_donor and donor mesh density.)
         if (!compartments.front().finite_dose)
         {
-            m_matrix_rhs.diag(0) = 2.0;
-            m_matrix_lhs.diag(0) = 2.0;
-
-            m_matrix_rhs.upper(0) = 0.0;
-            m_matrix_lhs.upper(0) = 0.0;
+            const auto& donor = compartments.front();
+            for (int i = donor.geo_from; i <= donor.geo_to; ++i)
+            {
+                m_matrix_rhs.diag(i) = 2.0;
+                m_matrix_lhs.diag(i) = 2.0;
+                if (i > 0)
+                {
+                    m_matrix_rhs.lower(i - 1) = 0.0;
+                    m_matrix_lhs.lower(i - 1) = 0.0;
+                }
+                if (i < sys_size - 1)
+                {
+                    m_matrix_rhs.upper(i) = 0.0;
+                    m_matrix_lhs.upper(i) = 0.0;
+                }
+            }
         }
 
         return true;
@@ -303,6 +318,24 @@ namespace sc
                 }
             }
 
+            // Donor <-> first-skin-layer face for an infinite-dose donor:
+            // treat the donor as Dirichlet at the cell edge (kappa_donor ->
+            // infinity in the harmonic mean), giving the half-cell conductance
+            // of the first skin layer cell: 2 * kappa_first_skin / h_first_skin.
+            // This eliminates the residual "fast-but-finite donor" artefact in
+            // the natural FVM coefficient.
+            if (!compartments.front().finite_dose)
+            {
+                const auto& donor = compartments.front();
+                if (donor.geo_to + 1 < N)
+                {
+                    const auto skin_idx = donor.geo_to + 1;
+                    const auto k_skin = kappa[static_cast<std::size_t>(skin_idx)];
+                    const auto h_skin = h[static_cast<std::size_t>(skin_idx)];
+                    alpha[static_cast<std::size_t>(donor.geo_to)] = 2.0 * k_skin / h_skin;
+                }
+            }
+
             // Assemble |M| where M is the spatial operator
             //   theta_i * h_i * du_i/dt = -|M_diag| * u_i + |M_lower| * u_{i-1}
             //                                          + |M_upper| * u_{i+1}
@@ -377,13 +410,29 @@ namespace sc
                 }
             }
 
-            // Infinite-dose donor: clamp the top cell.
+            // Infinite-dose donor: hold every donor cell at its initial
+            // value. Combined with the alpha override above, this makes the
+            // donor act as a true Dirichlet reservoir at the donor-membrane
+            // interface, regardless of D_donor or how many donor cells the
+            // mesh produces.
             if (!compartments.front().finite_dose)
             {
-                out_rhs.diag(0)  = 2.0;
-                out_lhs.diag(0)  = 2.0;
-                out_rhs.upper(0) = 0.0;
-                out_lhs.upper(0) = 0.0;
+                const auto& donor = compartments.front();
+                for (int i = donor.geo_from; i <= donor.geo_to; ++i)
+                {
+                    out_rhs.diag(i) = 2.0;
+                    out_lhs.diag(i) = 2.0;
+                    if (i > 0)
+                    {
+                        out_rhs.lower(i - 1) = 0.0;
+                        out_lhs.lower(i - 1) = 0.0;
+                    }
+                    if (i < N - 1)
+                    {
+                        out_rhs.upper(i) = 0.0;
+                        out_lhs.upper(i) = 0.0;
+                    }
+                }
             }
 
             return true;

@@ -7,25 +7,23 @@
 # against a fixed baseline. As we get confidence in the right answer the
 # tolerances here will tighten.
 #
-# Baseline numbers (BK mesh, Crank-Nicolson, Thomas-reuse, resolution = 4):
+# Baseline numbers (BK mesh, Crank-Nicolson, Thomas-reuse, resolution = 4,
+# true Dirichlet donor BC: all donor cells clamped + cell-edge alpha):
 #
-#                       DSkin_1_4    Activity_FVM    ratio
-#   slab-lag-time L_inf  8.6e-3       4.3e-4         20x
-#   slab slope_rel       5.3e-3       3.3e-4         16x
-#   slab lag_rel         9.7e-3       1.6e-4         60x
-#   ss-2L L1 L_inf       3.7e-3       1.2e-3          3x
-#   ss-2L L2 L_inf       1.9e-1       1.2e-3        160x  <- the headline
-#   ss-2L slope_rel      6.2e-3       1.2e-3          5x
-#   erfc L_inf           1.7e-2       1.8e-2         ~1x
-#   slab convergence     rate=0.84    rate=-0.07*
+#                       DSkin_1_4    Activity_FVM
+#   slab-lag-time L_inf  8.6e-3       1.6e-5
+#   slab slope_rel       5.3e-3       8.2e-5
+#   slab lag_rel         9.7e-3       6.6e-4
+#   ss-2L L1 L_inf       3.7e-3       1.4e-11   <- machine precision
+#   ss-2L L2 L_inf       1.9e-1       1.4e-11   <- machine precision
+#   ss-2L slope_rel      5.0e-3       8.2e-11
+#   erfc L_inf           1.6e-2       1.7e-2
+#   slab convergence     rate=1.00    rate=2.00 <- clean 2nd-order
 #
-#   (*) Activity_FVM is so accurate at coarsest mesh (~3e-4 relative error
-#       on cumulative sink mass) that further refinement is dominated by a
-#       small constant boundary-layer artefact (the "fast donor" Dirichlet
-#       approximation), not by the interior discretization, so the
-#       conventional p-rate measurement is not informative. The DSkin_1_4
-#       0.84 reflects genuine sub-second-order behaviour from its in-
-#       terface treatment.
+# Activity_FVM hits machine precision on the steady-state two-layer test
+# because the symmetric tridiagonal in u recovers piecewise-linear profiles
+# exactly. The lag-time and convergence numbers cleanly demonstrate
+# second-order spatial accuracy now that the donor BC is true Dirichlet.
 #
 # Each block prints the achieved error so the run output stays informative.
 
@@ -331,9 +329,9 @@ test_that("Activity_FVM: single-slab lag-time matches Crank 4.24a", {
                 sprintf("lag_rel=%.3e", lag_rel),
                 sprintf("(t_lag=%.3f, sim_lag=%.3f)", t_lag, intercept_sim))
 
-  expect_lt(errs_late["linf"], 0.02)
-  expect_lt(slope_rel, 0.02)
-  expect_lt(lag_rel,   0.05)
+  expect_lt(errs_late["linf"], 1e-4)
+  expect_lt(slope_rel,         1e-3)
+  expect_lt(lag_rel,           1e-2)
 })
 
 test_that("Activity_FVM: two-layer steady-state K-jump (the headline test)", {
@@ -378,10 +376,12 @@ test_that("Activity_FVM: two-layer steady-state K-jump (the headline test)", {
   slope_rel <- abs(slope_sim - slope_an) / abs(slope_an)
   message(sprintf("[analytical:activity:ss-two-layer] slope_rel=%.3e", slope_rel))
 
-  expect_lt(errs1["linf"], 0.05)
-  # The point of activity-FVM: tighten the K-jump artefact dramatically.
-  expect_lt(errs2["linf"], 0.05)
-  expect_lt(slope_rel,     0.02)
+  # The whole point of activity-FVM with a true Dirichlet donor BC: the
+  # steady-state profile is exact (piecewise linear, K-jump aside) and
+  # the symmetric tridiagonal recovers it to machine precision.
+  expect_lt(errs1["linf"], 1e-9)
+  expect_lt(errs2["linf"], 1e-9)
+  expect_lt(slope_rel,     1e-9)
 })
 
 test_that("Activity_FVM: semi-infinite erfc profile", {
@@ -435,10 +435,10 @@ test_that("Activity_FVM: spatial convergence rate is roughly second order", {
   message(sprintf("[analytical:activity:convergence] rate=%.3f  abs_err=[%s]  rel_err_max=%.3e",
                   rate, paste(sprintf("%.3e", errs), collapse = ", "), rel_err_max))
 
-  # Activity_FVM is accurate enough at the coarsest mesh (~5e-4 relative
-  # error) that the rate is dominated by the constant boundary-layer
-  # artefact from the "fast donor" Dirichlet approximation, not by the
-  # interior discretization. So we don't expect a clean second-order rate
-  # from this metric -- we just want the absolute accuracy to be high.
-  expect_lt(rel_err_max, 1e-3)
+  # With a true Dirichlet donor BC, the lag-time problem is smooth in the
+  # interior and the FVM scheme on uniform mesh cleanly recovers
+  # second-order spatial convergence.
+  expect_gt(rate, 1.9)
+  expect_lt(rate, 2.1)
+  expect_lt(rel_err_max, 1e-5)
 })
