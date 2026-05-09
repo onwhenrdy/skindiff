@@ -50,8 +50,10 @@ activity_jump <- function(res) {
   )
 }
 
-test_that("realistic SC/DSL/PK example runs and gives sane outputs", {
+test_that("realistic SC/DSL/PK example: outputs sane and activity continuous", {
   res <- run_realistic()
+
+  # Status / finiteness / order.
   expect_equal(res$status, "executed")
   expect_true(all(is.finite(res$mass$Blood)))
   expect_true(all(is.finite(res$mass$Vehicle)))
@@ -59,15 +61,12 @@ test_that("realistic SC/DSL/PK example runs and gives sane outputs", {
   expect_true(all(res$mass$Vehicle >= -1e-10))
   # No replace event here, so vehicle mass is monotonically non-increasing.
   expect_true(all(diff(res$mass$Vehicle) <= 1e-6 * max(res$mass$Vehicle)))
-})
 
-test_that("activity is continuous at the SC/DSL K-jump interface", {
-  res <- run_realistic()
+  # Activity continuity at the SC/DSL K-jump. Baseline ~2e-2 on this stack
+  # and resolution; the jump is largely a cell-center sampling artefact
+  # (cells closest to the interface sit at finite distance from it).
   jmp <- activity_jump(res)
   message(sprintf("[realistic:activity] u_sc_bot=%.4e  u_dsl_top=%.4e  rel_jump=%.3e",
                   jmp$u_sc_bot, jmp$u_dsl_top, jmp$rel_jump))
-  # On this stack and resolution, baseline is ~2e-2. The jump is largely a
-  # cell-center sampling artefact (cells closest to the interface sit at
-  # finite distance from it); the underlying scheme keeps u continuous.
   expect_lt(jmp$rel_jump, 0.05)
 })

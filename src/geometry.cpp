@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cmath>
+#include <limits>
 
 namespace sc
 {
@@ -13,17 +14,13 @@ namespace sc
         assert(ss_per_um > 0);
 
         m_space_steps.clear();
-        m_min_space_step = 1.0;
-        m_max_space_step = 1.0;
 
-        // Find the smallest D among the compartments; this anchors the
-        // smallest cell size at the compartment with the steepest gradient.
-        double D_min = compartments.front().D;
+        double D_min = std::numeric_limits<double>::infinity();
         for (const auto& c : compartments)
         {
             if (c.D > 0.0 && c.D < D_min) D_min = c.D;
         }
-        assert(D_min > 0.0);
+        assert(std::isfinite(D_min) && D_min > 0.0);
 
         const double dx_min = 1.0 / ss_per_um;
 
@@ -33,9 +30,7 @@ namespace sc
             assert(c.height_um > 0);
             const auto start_idx = counter;
 
-            // Per-compartment cell size scales with sqrt(D_i / D_min). Cell
-            // count is rounded so the cells fit the compartment exactly.
-            const double dx_target = dx_min * std::sqrt(std::max(c.D, D_min) / D_min);
+            const double dx_target = dx_min * std::sqrt(c.D / D_min);
             int n_cells = static_cast<int>(std::round(c.height_um / dx_target));
             if (n_cells < 1) n_cells = 1;
             const double actual_dx =
