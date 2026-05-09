@@ -59,12 +59,6 @@ namespace sc
         bool   log_mass  = true;
     };
 
-    struct PKParams
-    {
-        bool   enabled = false;
-        double thalf   = 1.0;     // hours
-    };
-
     struct SystemParams
     {
         int    resolution      = 1;     // sub-steps per um at the smallest-D compartment
@@ -83,7 +77,6 @@ namespace sc
     {
         SystemParams              sys;
         LogParams                 log;
-        PKParams                  pk;
         SinkParams                sink;
         VehicleParams             vehicle;
         std::vector<LayerParams>  layers;

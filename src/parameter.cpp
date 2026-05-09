@@ -76,12 +76,6 @@ namespace sc
             return std::nullopt;
         }
 
-        std::optional<std::string> validate(const PKParams& pk)
-        {
-            if (pk.enabled && pk.thalf <= 0.0) return "pk.thalf <= 0";
-            return std::nullopt;
-        }
-
         std::optional<std::string> validate(const SystemParams& s)
         {
             if (s.resolution      <= 0)             return "sys.resolution <= 0";
@@ -102,7 +96,6 @@ namespace sc
     {
         if (auto err = validate(p.sys))     return err;
         if (auto err = validate(p.log))     return err;
-        if (auto err = validate(p.pk))      return err;
         if (auto err = validate(p.sink))    return err;
         if (auto err = validate(p.vehicle)) return err;
         for (std::size_t i = 0; i < p.layers.size(); ++i)

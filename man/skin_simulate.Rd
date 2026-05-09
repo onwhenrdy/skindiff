@@ -18,19 +18,22 @@ An object of class `"skin_result"` -- a list containing:
   * `status`:    `"executed"`, `"stopped"`, or `"failed"`.
   * `scaling`:   character; the mass unit reported in the result
                  (`"mg"`, `"ug"`, or `"ng"`).
-  * `mass`:      data.frame with columns `time` (min) and one column per
-                 logged compartment (vehicle, layers, sink), holding the
-                 integrated mass in the chosen scaling unit.
-  * `concentration`: data.frame with the same columns as `mass` but
-                 holding the average concentration (mass per ml). The
-                 vehicle column gives donor concentration vs time.
+  * `mass`:      data.frame with columns `time` (units of time) and one
+                 column per logged compartment (vehicle, layers, sink),
+                 each carrying the integrated mass with its scaling unit.
+  * `concentration`: data.frame with the same columns as `mass`, holding
+                 the average concentration (mass per ml) with units. The
+                 vehicle column gives donor concentration vs time; the
+                 sink column is `NA` for perfect sinks (use the cumulative
+                 mass column instead).
   * `cdp`:       named list, one entry per compartment with `log_cdp =
-                 TRUE`. Each entry has `time`, `depth_um`, and a numeric
-                 matrix `conc` indexed `[depth, time]`, in
-                 `<scaling>/ml`.
-  * `geometry`:  list with `min_step_um`, `max_step_um`, and `n_cells`.
+                 TRUE`. Each entry has `time` (units of time), `depth`
+                 (units of length), and a numeric matrix `conc` indexed
+                 `[depth, time]` carrying its scaling/ml unit.
+  * `geometry`:  list with `min_step` (units of length), `max_step`,
+                 and `n_cells` (bare integer).
   * `params`:    the input parameters (unchanged).
-  * `runtime_s`: wall-clock runtime in seconds.
+  * `runtime`:   wall-clock runtime, units of time.
 }
 \description{
 Run a skindiff simulation

@@ -47,14 +47,6 @@ namespace
         return out;
     }
 
-    PKParams readPK(const Rcpp::List& pk)
-    {
-        PKParams out;
-        out.enabled = pick<bool>(pk,   "enabled", false);
-        out.thalf   = pick<double>(pk, "thalf",   1.0);
-        return out;
-    }
-
     SinkParams readSink(const Rcpp::List& s)
     {
         SinkParams out;
@@ -107,7 +99,6 @@ namespace
         Parameters out;
         if (p.containsElementNamed("sys"))     out.sys     = readSys(p["sys"]);
         if (p.containsElementNamed("log"))     out.log     = readLog(p["log"]);
-        if (p.containsElementNamed("pk"))      out.pk      = readPK(p["pk"]);
         if (p.containsElementNamed("sink"))    out.sink    = readSink(p["sink"]);
         if (p.containsElementNamed("vehicle")) out.vehicle = readVehicle(p["vehicle"]);
         if (p.containsElementNamed("layers"))  out.layers  = readLayers(p["layers"]);

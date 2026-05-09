@@ -1,4 +1,4 @@
-# End-to-end test on the realistic SC / DSL / PK setup that originally
+# End-to-end test on the realistic SC / DSL setup that originally
 # motivated the project (cf. the old scripts/example.R). The K-jump at the
 # SC/DSL interface is steep (K = 421 -> K = 0.047, ratio ~9000), which used
 # to be a notorious source of discretization error in the old c-formulation
@@ -11,33 +11,34 @@
 
 run_realistic <- function() {
   skin_simulate(skin_params(
-    vehicle = list(
-      c_init   = 127.2727, height = 110L, D = 9.266667, app_area = 15.0,
-      finite_dose = TRUE, log_mass = TRUE, log_cdp = TRUE
+    area = cm2(15.0),
+    vehicle = vehicle(
+      c_init = mg_per_ml(127.2727), height = um(110L),
+      D = um2_per_min(9.266667), finite_dose = TRUE,
+      log_mass = TRUE, log_cdp = TRUE
     ),
-    layers = data.frame(
-      name          = c("Stratum corneum", "Deeper skin layers"),
-      height        = c(190L, 200L),
-      D             = c(28.2539, 5767.783),
-      K             = c(421.543, 0.04719648),
-      cross_section = c(0.001, 0.3),
-      log_mass = c(TRUE, TRUE),
-      log_cdp  = c(TRUE, TRUE)
+    layers = list(
+      layer("Stratum corneum", height = um(190L), D = um2_per_min(28.2539),
+            K = 421.543, cross_section = 0.001,
+            log_mass = TRUE, log_cdp = TRUE),
+      layer("Deeper skin layers", height = um(200L), D = um2_per_min(5767.783),
+            K = 0.04719648, cross_section = 0.3,
+            log_mass = TRUE, log_cdp = TRUE)
     ),
-    sink = list(name = "Blood", Vd = 25 * 1000 * 75, log_mass = TRUE),
-    pk   = list(enabled = TRUE, thalf = 24),
-    sim_time      = 24 * 60L,
-    resolution    = 4L,
-    scaling       = "ng",
-    max_module    = 200
+    sink = finite_sink("Blood", Vd = ml(25 * 1000 * 75), log_mass = TRUE),
+    duration   = hours(24L),
+    resolution = 4L,
+    scaling    = "ng",
+    max_module = 200
   ))
 }
 
 activity_jump <- function(res) {
   K_sc  <- 421.543
   K_dsl <- 0.04719648
-  sc  <- res$cdp$`Stratum corneum`$conc
-  dsl <- res$cdp$`Deeper skin layers`$conc
+  # Strip units for activity-jump diagnostics; we just want bare ratios.
+  sc  <- as.matrix(unclass(res$cdp$`Stratum corneum`$conc))
+  dsl <- as.matrix(unclass(res$cdp$`Deeper skin layers`$conc))
   last <- ncol(sc)
   c_sc_bot  <- sc[nrow(sc),  last]
   c_dsl_top <- dsl[1,        last]
@@ -50,17 +51,19 @@ activity_jump <- function(res) {
   )
 }
 
-test_that("realistic SC/DSL/PK example: outputs sane and activity continuous", {
+test_that("realistic SC/DSL example: outputs sane and activity continuous", {
   res <- run_realistic()
 
   # Status / finiteness / order.
   expect_equal(res$status, "executed")
   expect_true(all(is.finite(res$mass$Blood)))
   expect_true(all(is.finite(res$mass$Vehicle)))
-  expect_true(all(res$mass$Blood   >= -1e-10))
-  expect_true(all(res$mass$Vehicle >= -1e-10))
+  blood_bare <- as.numeric(res$mass$Blood)
+  vehicle_bare <- as.numeric(res$mass$Vehicle)
+  expect_true(all(blood_bare   >= -1e-10))
+  expect_true(all(vehicle_bare >= -1e-10))
   # No replace event here, so vehicle mass is monotonically non-increasing.
-  expect_true(all(diff(res$mass$Vehicle) <= 1e-6 * max(res$mass$Vehicle)))
+  expect_true(all(diff(vehicle_bare) <= 1e-6 * max(vehicle_bare)))
 
   # Activity continuity at the SC/DSL K-jump. Baseline ~2e-2 on this stack
   # and resolution; the jump is largely a cell-center sampling artefact

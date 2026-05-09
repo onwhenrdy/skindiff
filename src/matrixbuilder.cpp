@@ -197,22 +197,13 @@ namespace sc
         }
 
         // Sink BC: decouple the membrane row from the sink (no upward flux),
-        // reset the sink diag to the perfect / PK form.
+        // reset the sink diag to the perfect-Dirichlet form.
         if (sink)
         {
             m_matrix_rhs.upper(N - 2) = 0.0;
             m_matrix_lhs.upper(N - 2) = 0.0;
-
-            if (sink->type == Sink::Type::PK_Compartment)
-            {
-                m_matrix_rhs.diag(N - 1) = 2.0 - dt * sink->kEl();
-                m_matrix_lhs.diag(N - 1) = 2.0 + dt * sink->kEl();
-            }
-            else
-            {
-                m_matrix_rhs.diag(N - 1) = 2.0;
-                m_matrix_lhs.diag(N - 1) = 2.0;
-            }
+            m_matrix_rhs.diag(N - 1)  = 2.0;
+            m_matrix_lhs.diag(N - 1)  = 2.0;
         }
 
         // Infinite-dose donor: clamp every donor cell at its initial value.

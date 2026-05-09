@@ -46,7 +46,7 @@ namespace sc
         {
             // The sink "cell" is virtual: the stored value (whether c or u) is
             // scaled by Vd/cell_vol (see initConcentrations) so that
-            //     stored * K_sink * cell_vol = true mass in the PK compartment.
+            //     stored * K_sink * cell_vol = true mass that has crossed.
             // K_sink is 1 by convention, so cellConc(sink, ...) is the
             // Vd-scaled value and the integrand is the true mass.
             const auto idx  = sink.geo_from;
@@ -98,7 +98,6 @@ namespace sc
         const auto& v   = m_parameters.vehicle;
         const auto& sys = m_parameters.sys;
         const auto& sk  = m_parameters.sink;
-        const auto& pk  = m_parameters.pk;
 
         m_matrix_builder.setMaxModule(sys.max_module);
 
@@ -117,13 +116,13 @@ namespace sc
             m_compartments.push_back(std::move(c));
         }
 
-        // Sink.
+        // Sink. Always a perfect Dirichlet boundary for the membrane;
+        // the cell itself is a virtual mass accumulator. `Vd` only affects
+        // the reported sink concentration (mass / Vd) post-hoc.
         m_sink.name     = sk.name;
-        m_sink.type     = pk.enabled ? Sink::Type::PK_Compartment : Sink::Type::Perfect_Sink;
         m_sink.area_um2 = app_area_um2 *
             (m_parameters.layers.empty() ? 1.0 : m_parameters.layers.back().cross_section);
         m_sink.Vd     = sk.Vd;
-        m_sink.t_half = pk.thalf * 60.0;     // hours -> minutes
         m_sink.c_init = mg_per_ml_to_mg_per_um3(sk.c_init);
 
         buildGeometryAndMatrices();
@@ -166,7 +165,7 @@ namespace sc
         }
 
         // Sink Vd-scaling: store cell value such that
-        //     stored * cell_volume = c_init_sink * Vd  (the true PK-compartment mass).
+        //     stored * cell_volume = c_init_sink * Vd  (the true sink-compartment mass).
         // K_sink = 1 so this is the same expression in both u- and c-spaces.
         const auto idx  = m_sink.geo_from;
         const auto ss   = m_geometry.spaceSteps()[static_cast<std::size_t>(idx)];

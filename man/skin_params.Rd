@@ -5,66 +5,60 @@
 \title{Build a validated set of skindiff simulation parameters}
 \usage{
 skin_params(
+  area,
   vehicle,
   layers,
   sink,
-  pk = list(enabled = FALSE, thalf = 1),
-  sim_time = 600L,
+  duration,
   resolution = 1L,
   max_module = 50,
   scaling = c("mg", "ug", "ng"),
-  mass_log_interval = 1L,
-  cdp_log_interval = 1L
+  mass_log_interval = minutes(1L),
+  cdp_log_interval = minutes(1L)
 )
 }
 \arguments{
-\item{vehicle}{Named list describing the vehicle / donor compartment.
-Fields:
-* `c_init` (numeric, mg/ml): initial donor concentration.
-* `app_area` (numeric, cm^2): application area.
-* `D` (numeric, um^2/min): diffusion coefficient inside the donor.
-* `height` (integer, um): donor thickness.
-* `finite_dose` (logical): if `FALSE`, the donor concentration stays
-  clamped at `c_init` for the entire run.
-* `replace_after` (integer, min): if > 0, donor is reset to `c_init`
-  every `replace_after` minutes.
-* `remove_at` (integer, min): if > 0, donor is removed at this time.
-* `name` (character): label used in result output.
-* `log_mass`, `log_cdp` (logical): whether to record this compartment.}
+\item{area}{Application area (skin patch area). Must have units of area.}
 
-\item{layers}{`data.frame` with one row per skin layer (top to bottom).
-Required columns: `name`, `height` (um), `D` (um^2/min), `K`
-(partition coefficient relative to vehicle), `cross_section` (in
-`(0, 1]`). Optional: `c_init`, `log_mass`, `log_cdp`.}
+\item{vehicle}{A [vehicle()] object.}
 
-\item{sink}{Named list with fields `Vd` (ml), `c_init` (mg/ml), `name`,
-`log_mass`. Only `Vd` is consulted when PK is disabled.}
+\item{layers}{A list of [layer()] objects, ordered top-to-bottom.}
 
-\item{pk}{Named list with fields `enabled` (logical) and `thalf`
-(numeric, hours). When `enabled = FALSE` the sink behaves as a perfect
-sink.}
+\item{sink}{A [perfect_sink()] or [finite_sink()] object.}
 
-\item{sim_time}{Total simulation time, integer, minutes.}
+\item{duration}{Total simulation time (units of time, integer minutes
+internally).}
 
-\item{resolution}{Mesh refinement: cells per micrometre at the
-smallest-D compartment. Higher-D compartments get proportionally
-coarser cells (`dx ∝ sqrt(D)`), since their gradient scale in the
-activity variable is wider.}
+\item{resolution}{Mesh refinement: integer cells per micrometre in the
+smallest-D compartment (dimensionless integer >= 1). Higher-D
+compartments get proportionally coarser cells.}
 
-\item{max_module}{Stability target for the implicit sub-step count.}
+\item{max_module}{Stability target for the implicit sub-step count
+(dimensionless, > 0).}
 
 \item{scaling}{Output mass scaling: `"mg"`, `"ug"`, or `"ng"`.}
 
-\item{mass_log_interval}{Sample interval for mass time-series, minutes.}
+\item{mass_log_interval}{Sample interval for mass time-series (units
+of time, integer minutes internally).}
 
-\item{cdp_log_interval}{Sample interval for concentration-depth profiles,
-minutes.}
+\item{cdp_log_interval}{Sample interval for concentration-depth
+profiles (units of time, integer minutes internally).}
 }
 \value{
-A list with class `"skin_params"` ready for [skin_simulate()].
+A `skin_params` object ready for [skin_simulate()].
 }
 \description{
-Constructs the parameter object consumed by [skin_simulate()]. All units
-are stated explicitly. The returned list is validated both at the R level
-and again inside the C++ engine.
+Composes the experimental geometry (`area`), the donor (`vehicle`), a
+top-to-bottom stack of skin layers, and a receptor sink into a single
+validated parameter object that can be passed to [skin_simulate()].
+}
+\details{
+All compartment-level quantities live on the constructor objects
+([vehicle()], [layer()], [perfect_sink()], [finite_sink()]). All
+system-level quantities (application area, simulation duration, log
+intervals, mesh resolution, output scaling) live here.
+
+Unit-bearing arguments require `units` objects (use [um()],
+[mg_per_ml()], [hours()], etc., or call [units::set_units()]
+directly).
 }

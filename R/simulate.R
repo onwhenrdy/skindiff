@@ -9,44 +9,59 @@
 #'   * `status`:    `"executed"`, `"stopped"`, or `"failed"`.
 #'   * `scaling`:   character; the mass unit reported in the result
 #'                  (`"mg"`, `"ug"`, or `"ng"`).
-#'   * `mass`:      data.frame with columns `time` (min) and one column per
-#'                  logged compartment (vehicle, layers, sink), holding the
-#'                  integrated mass in the chosen scaling unit.
-#'   * `concentration`: data.frame with the same columns as `mass` but
-#'                  holding the average concentration (mass per ml). The
-#'                  vehicle column gives donor concentration vs time.
+#'   * `mass`:      data.frame with columns `time` (units of time) and one
+#'                  column per logged compartment (vehicle, layers, sink),
+#'                  each carrying the integrated mass with its scaling unit.
+#'   * `concentration`: data.frame with the same columns as `mass`, holding
+#'                  the average concentration (mass per ml) with units. The
+#'                  vehicle column gives donor concentration vs time; the
+#'                  sink column is `NA` for perfect sinks (use the cumulative
+#'                  mass column instead).
 #'   * `cdp`:       named list, one entry per compartment with `log_cdp =
-#'                  TRUE`. Each entry has `time`, `depth_um`, and a numeric
-#'                  matrix `conc` indexed `[depth, time]`, in
-#'                  `<scaling>/ml`.
-#'   * `geometry`:  list with `min_step_um`, `max_step_um`, and `n_cells`.
+#'                  TRUE`. Each entry has `time` (units of time), `depth`
+#'                  (units of length), and a numeric matrix `conc` indexed
+#'                  `[depth, time]` carrying its scaling/ml unit.
+#'   * `geometry`:  list with `min_step` (units of length), `max_step`,
+#'                  and `n_cells` (bare integer).
 #'   * `params`:    the input parameters (unchanged).
-#'   * `runtime_s`: wall-clock runtime in seconds.
+#'   * `runtime`:   wall-clock runtime, units of time.
 #'
 #' @export
 skin_simulate <- function(params, show_progress = FALSE) {
   if (!inherits(params, "skin_params")) {
-    stop("`params` must be a skin_params object built with skin_params()",
-         call. = FALSE)
+    cli::cli_abort(c(
+      "{.arg params} must be a {.cls skin_params} object.",
+      "i" = "Build it with {.fn skin_params}."
+    ))
   }
-  show_progress <- .as_lgl(show_progress, "show_progress")
+  show_progress <- .ensure_lgl(show_progress, "show_progress")
 
   t0 <- Sys.time()
   raw <- .cpp_simulate(unclass(params), show_progress = show_progress)
-  runtime <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
+  runtime_s <- as.numeric(difftime(Sys.time(), t0, units = "secs"))
 
-  mass_df <- .mass_to_df(raw$mass)
-  conc_df <- .mass_to_concentration(mass_df, params)
+  scaling_unit <- raw$scaling                 # "mg" / "ug" / "ng"
+  conc_unit    <- paste0(scaling_unit, "/ml")
+
+  mass_df <- .mass_to_df(raw$mass, scaling_unit)
+  conc_df <- .mass_to_concentration(mass_df, params, conc_unit)
+  cdp     <- .cdp_with_units(raw$cdp, conc_unit)
+
+  geometry <- list(
+    min_step = units::set_units(raw$geometry$min_step_um, "um"),
+    max_step = units::set_units(raw$geometry$max_step_um, "um"),
+    n_cells  = raw$geometry$n_cells
+  )
 
   out <- list(
     status        = raw$status,
-    scaling       = raw$scaling,
+    scaling       = scaling_unit,
     mass          = mass_df,
     concentration = conc_df,
-    cdp           = raw$cdp,
-    geometry      = raw$geometry,
+    cdp           = cdp,
+    geometry      = geometry,
     params        = params,
-    runtime_s     = runtime
+    runtime       = units::set_units(runtime_s, "s")
   )
   class(out) <- "skin_result"
   out
@@ -57,7 +72,7 @@ print.skin_result <- function(x, ...) {
   cat("<skin_result>\n")
   cat(sprintf("  status      : %s\n", x$status))
   cat(sprintf("  scaling     : %s\n", x$scaling))
-  cat(sprintf("  runtime     : %.3f s\n", x$runtime_s))
+  cat(sprintf("  runtime     : %s\n", format(x$runtime)))
   cat(sprintf("  time points : %d (mass)\n", nrow(x$mass)))
   cdp_names <- names(x$cdp)
   if (length(cdp_names) > 0) {
@@ -65,31 +80,30 @@ print.skin_result <- function(x, ...) {
   } else {
     cat("  cdp recorded: <none>\n")
   }
-  cat(sprintf("  geometry    : %d cells, min step %.4g um\n",
-              x$geometry$n_cells, x$geometry$min_step_um))
+  cat(sprintf("  geometry    : %d cells, min step %s\n",
+              x$geometry$n_cells, format(x$geometry$min_step)))
   invisible(x)
 }
 
 #' @export
 summary.skin_result <- function(object, ...) {
-  unit <- object$scaling
   cat(sprintf("skindiff simulation summary (%s)\n", object$status))
-  cat(sprintf("  scaling: %s\n", unit))
-  cat(sprintf("  end time: %g min\n", max(object$mass$time)))
+  cat(sprintf("  scaling: %s\n", object$scaling))
+  cat(sprintf("  end time: %s\n",
+              format(units::set_units(max(as.numeric(object$mass$time)), "min"))))
   cat("  final masses:\n")
-  finals <- vapply(setdiff(names(object$mass), "time"),
-                   function(nm) object$mass[[nm]][nrow(object$mass)], numeric(1))
-  for (nm in names(finals)) {
-    cat(sprintf("    %-20s %.6g %s\n", nm, finals[[nm]], unit))
+  for (nm in setdiff(names(object$mass), "time")) {
+    final <- object$mass[[nm]][nrow(object$mass)]
+    cat(sprintf("    %-20s %s\n", nm, format(final)))
   }
   invisible(object)
 }
 
 # ---------- internal: result reshaping ----------
 
-.mass_to_df <- function(mass_list) {
+.mass_to_df <- function(mass_list, scaling_unit) {
   if (length(mass_list) == 0L) {
-    return(data.frame(time = numeric(0)))
+    return(data.frame(time = units::set_units(numeric(0), "min")))
   }
   # Different series may have different lengths if a compartment was
   # removed mid-run (the donor's series ends at remove_at, the layers and
@@ -97,39 +111,57 @@ summary.skin_result <- function(object, ...) {
   # pad shorter ones with NA.
   lengths <- vapply(mass_list, function(s) length(s$time), integer(1))
   canonical <- mass_list[[which.max(lengths)]]$time
-  cols <- list(time = canonical)
+  cols <- list(time = units::set_units(canonical, "min"))
   for (nm in names(mass_list)) {
     s <- mass_list[[nm]]
     matched <- match(canonical, s$time)
-    cols[[nm]] <- s$value[matched]
+    cols[[nm]] <- units::set_units(s$value[matched], scaling_unit,
+                                   mode = "standard")
   }
-  as.data.frame(cols, stringsAsFactors = FALSE, check.names = FALSE)
+  data.frame(cols, stringsAsFactors = FALSE, check.names = FALSE)
 }
 
-.mass_to_concentration <- function(mass_df, params) {
+.mass_to_concentration <- function(mass_df, params, conc_unit) {
   if (nrow(mass_df) == 0L) return(mass_df)
   out <- data.frame(time = mass_df$time)
-  vehicle_name <- params$vehicle$name
-  vehicle_vol_ml <- params$vehicle$app_area * params$vehicle$height * 1e-4
+  vehicle_name    <- params$vehicle$name
+  area_cm2        <- params$.meta$area_cm2
+  vehicle_vol_ml  <- area_cm2 * params$vehicle$height * 1e-4   # cm^2 * um * 1e-4 = ml
+  sink_is_perfect <- isTRUE(params$.meta$sink_is_perfect)
+
+  na_col <- units::set_units(rep(NA_real_, nrow(mass_df)), conc_unit,
+                             mode = "standard")
+
   for (nm in setdiff(names(mass_df), "time")) {
-    if (nm == vehicle_name) {
-      out[[nm]] <- mass_df[[nm]] / vehicle_vol_ml
-      next
+    out[[nm]] <- if (nm == vehicle_name) {
+      mass_df[[nm]] / units::set_units(vehicle_vol_ml, "ml")
+    } else if (nm == params$sink$name) {
+      # Perfect sink: mass/Vd ~ 0 would be misleading. Flag with NA.
+      if (sink_is_perfect) na_col
+      else mass_df[[nm]] / units::set_units(params$sink$Vd, "ml")
+    } else {
+      layer <- .find_layer(params$layers, nm)
+      if (is.null(layer)) {
+        na_col
+      } else {
+        layer_vol_ml <- area_cm2 * layer$cross_section * layer$height * 1e-4
+        mass_df[[nm]] / units::set_units(layer_vol_ml, "ml")
+      }
     }
-    if (nm == params$sink$name) {
-      out[[nm]] <- mass_df[[nm]] / params$sink$Vd
-      next
-    }
-    layer <- .find_layer(params$layers, nm)
-    if (is.null(layer)) {
-      out[[nm]] <- NA_real_
-      next
-    }
-    layer_vol_ml <- params$vehicle$app_area * layer$cross_section *
-                    layer$height * 1e-4
-    out[[nm]] <- mass_df[[nm]] / layer_vol_ml
   }
   out
+}
+
+.cdp_with_units <- function(cdp, conc_unit) {
+  for (nm in names(cdp)) {
+    s <- cdp[[nm]]
+    cdp[[nm]] <- list(
+      time  = units::set_units(s$time, "min"),
+      depth = units::set_units(s$depth_um, "um"),
+      conc  = units::set_units(s$conc, conc_unit, mode = "standard")
+    )
+  }
+  cdp
 }
 
 .find_layer <- function(layers, name) {

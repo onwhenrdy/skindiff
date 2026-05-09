@@ -9,50 +9,47 @@
 #    is preserved up to the removal time (post-removal entries are NA in the
 #    result data.frame).
 
-base_params <- function(...) {
-  defaults <- list(
-    vehicle = list(c_init = 1.0, height = 30L, D = 1.0, app_area = 1.0,
-                   finite_dose = TRUE, log_mass = TRUE),
-    layers = data.frame(name = "SC", height = 20L, D = 1.0, K = 1.0,
-                        cross_section = 1.0, log_mass = TRUE),
-    sink = list(name = "Sink", Vd = 1.0, log_mass = TRUE),
-    sim_time = 60L
+base_params <- function(vehicle_args = list(), duration = minutes(60L)) {
+  veh_defaults <- list(c_init = mg_per_ml(1.0), height = um(30L),
+                       D = um2_per_min(1.0), finite_dose = TRUE,
+                       log_mass = TRUE)
+  veh <- do.call(vehicle, modifyList(veh_defaults, vehicle_args))
+  skin_params(
+    area = cm2(1.0),
+    vehicle = veh,
+    layers = list(layer("SC", height = um(20L), D = um2_per_min(1.0),
+                        K = 1.0, cross_section = 1.0, log_mass = TRUE)),
+    sink = perfect_sink("Sink"),
+    duration = duration
   )
-  args <- modifyList(defaults, list(...))
-  do.call(skin_params, args)
 }
 
 test_that("replace_after resets the donor at every multiple of the period", {
-  p <- base_params(
-    vehicle = list(c_init = 1.0, height = 30L, D = 1.0, app_area = 1.0,
-                   finite_dose = TRUE, log_mass = TRUE,
-                   replace_after = 30L)
-  )
+  p <- base_params(vehicle_args = list(replace_after = minutes(30L)))
   res <- skin_simulate(p)
-  initial <- res$mass$Vehicle[1]
+  veh <- as.numeric(res$mass$Vehicle)
+  initial <- veh[1]
 
   # Just before replace at t = 30: depleted.
-  expect_lt(res$mass$Vehicle[30], initial)
+  expect_lt(veh[30], initial)
 
   # Right at t = 30 (after the replace event): back to initial.
-  expect_equal(res$mass$Vehicle[31], initial, tolerance = 1e-12)
+  expect_equal(veh[31], initial, tolerance = 1e-12)
 
   # And again at t = 60.
-  expect_equal(res$mass$Vehicle[61], initial, tolerance = 1e-12)
+  expect_equal(veh[61], initial, tolerance = 1e-12)
 })
 
-test_that("replace_after: mass is conserved between events, jumps at events", {
+test_that("replace_after: mass conserved between events, jumps at events", {
   # The replace event is an *unbounded source*: it tops the donor back up to
   # c_init, injecting mass (= initial - depleted) into the system. Therefore:
   #   - between events the system is closed and total mass is constant,
   #   - at each replace event, total mass jumps up by the refill amount.
-  p <- base_params(
-    vehicle = list(c_init = 1.0, height = 30L, D = 1.0, app_area = 1.0,
-                   finite_dose = TRUE, log_mass = TRUE,
-                   replace_after = 30L)
-  )
+  p <- base_params(vehicle_args = list(replace_after = minutes(30L)))
   res <- skin_simulate(p)
-  totals <- rowSums(res$mass[, c("Vehicle", "SC", "Sink")])
+  # rowSums on units-bearing columns is unsafe; sum directly, then strip
+  # units for ratio comparisons.
+  totals <- as.numeric(res$mass$Vehicle + res$mass$SC + res$mass$Sink)
 
   # Recorded rows 1..30 cover sim times 0..29 (no replace event yet).
   rel_drift_pre <- max(abs(totals[1:30] - totals[1])) / totals[1]
@@ -72,18 +69,15 @@ test_that("replace_after: mass is conserved between events, jumps at events", {
   # row 30 (sim t = 29) is almost the pre-replace value (the donor only
   # loses a tiny amount during the 29 -> 30 diffusion sub-step), so the
   # jump matches `initial - vehicle[30]` to within a few percent.
-  initial <- res$mass$Vehicle[1]
+  vehicle_bare <- as.numeric(res$mass$Vehicle)
+  initial <- vehicle_bare[1]
   refill  <- totals[31] - totals[30]
-  naive   <- initial - res$mass$Vehicle[30]
+  naive   <- initial - vehicle_bare[30]
   expect_lt(abs(refill - naive) / naive, 0.05)
 })
 
 test_that("remove_at deletes the donor and the sim continues", {
-  p <- base_params(
-    vehicle = list(c_init = 1.0, height = 30L, D = 1.0, app_area = 1.0,
-                   finite_dose = TRUE, log_mass = TRUE,
-                   remove_at = 30L)
-  )
+  p <- base_params(vehicle_args = list(remove_at = minutes(30L)))
   res <- skin_simulate(p)
 
   # Donor column is present, with real data up to remove_at and NA after.
@@ -107,11 +101,9 @@ test_that("combined replace + remove reproduces example.R-style setup", {
   # Replace every 30 min, remove at 90 min, sim to 120 min. Exercises
   # multiple replace events plus a removal in one run.
   p <- base_params(
-    sim_time = 120L,
-    vehicle = list(c_init = 1.0, height = 30L, D = 1.0, app_area = 1.0,
-                   finite_dose = TRUE, log_mass = TRUE,
-                   replace_after = 30L,
-                   remove_at = 90L)
+    duration = minutes(120L),
+    vehicle_args = list(replace_after = minutes(30L),
+                        remove_at = minutes(90L))
   )
   res <- skin_simulate(p)
 
@@ -121,5 +113,5 @@ test_that("combined replace + remove reproduces example.R-style setup", {
   expect_true(all(is.finite(res$mass$Vehicle[1:90])))
   expect_true(all(is.na(res$mass$Vehicle[91:121])))
   expect_equal(nrow(res$mass), 121L)
-  expect_gt(tail(res$mass$Sink, 1), 0)
+  expect_gt(as.numeric(tail(res$mass$Sink, 1)), 0)
 })
