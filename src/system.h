@@ -47,6 +47,13 @@ namespace sc
         }
         [[nodiscard]] const MassSeries& sinkMass() const noexcept { return m_sink_mass; }
         [[nodiscard]] const std::vector<CdpSeries>& cdp() const noexcept { return m_cdp_series; }
+        // Original-compartment names, one per entry in compartmentMass() / cdp().
+        // The vectors stay aligned to the original compartment list even after
+        // a donor-removal event, so pre-removal donor data is preserved.
+        [[nodiscard]] const std::vector<std::string>& compartmentNames() const noexcept
+        {
+            return m_compartment_names;
+        }
 
       protected:
         // Hooks for derived classes (e.g. R bindings) to inject progress / cancellation.
@@ -78,9 +85,16 @@ namespace sc
         Geometry                 m_geometry;
         MatrixBuilder            m_matrix_builder;
 
-        std::vector<MassSeries> m_mass_series;  // one per active compartment (incl. donor)
-        MassSeries              m_sink_mass;
-        std::vector<CdpSeries>  m_cdp_series;   // one per active compartment
+        // The series vectors are indexed by *original* compartment position
+        // (immutable after init). m_active_to_orig maps the current
+        // m_compartments index to that position, so a donor-removal event
+        // shrinks m_compartments but leaves the donor's mass / CDP series
+        // intact in m_mass_series[0] / m_cdp_series[0].
+        std::vector<std::string> m_compartment_names;
+        std::vector<int>         m_active_to_orig;
+        std::vector<MassSeries>  m_mass_series;
+        MassSeries               m_sink_mass;
+        std::vector<CdpSeries>   m_cdp_series;
 
         int    m_sim_time      = 1;
         int    m_replace_after = 0;

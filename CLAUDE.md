@@ -49,7 +49,7 @@ skindiff/
 │   ├── compartment.h        # Compartment (struct, header-only)
 │   ├── sink.h               # Sink (struct, header-only)
 │   ├── geometry.{cpp,h}     # mesh construction
-│   ├── matrixbuilder.{cpp,h}# Crank-Nicolson matrix assembly (DSkin_1_4)
+│   ├── matrixbuilder.{cpp,h}# Crank-Nicolson FVM in u = c/K
 │   ├── tdmatrix.{cpp,h}     # tri-diagonal matrix
 │   ├── algorithms.h         # thomasIP, thomasReUseIP (header-only)
 │   ├── logger.h             # MassSeries, CdpSeries (header-only)
@@ -80,7 +80,7 @@ R list  ──►  rcpp_bindings::parametersFromR  ──►  Parameters (struct
                                                   ├─ builds Sink
                                                   │  (Perfect_Sink or PK_Compartment)
                                                   ├─ MatrixBuilder::buildMatrix
-                                                  │  (Crank-Nicolson, DSkin_1_4)
+                                                  │  (Crank-Nicolson FVM in u)
                                                   └─ initLoggers (MassSeries, CdpSeries)
                                                         │
                                                   System::run()
@@ -107,9 +107,11 @@ Key points:
 - **Loggers are plain data structs** (`MassSeries`, `CdpSeries` in
   `logger.h`). Mass integration lives in `System::recordAt`. There is
   **no file I/O** — results return to R as in-memory lists / matrices.
-- **Only `MatrixBuilder::Method::DSkin_1_4`** is implemented. The older
-  `DSkin_1_3` and the `DSkin_1_5` "fast variant" were dropped during
-  modernization; if either is needed again, restore from git history.
+- **The matrix builder is cell-centred FVM in `u = c/K` (activity)**.
+  Symmetric tri-diagonal in the bulk; activity is continuous at K-jumps
+  by construction. The earlier legacy c-formulation schemes were
+  dropped during modernization; if you need them back they live in git
+  history (last present at commit `7894746`).
 - **Only Thomas-style solvers** are used in production
   (`thomasIP`, `thomasReUseIP`). The Gauss variants and the
   super-upper / pivot-index members of `TDMatrix` were removed.
@@ -167,8 +169,8 @@ functions of the same name and the build fails with a confusing
 
 ## Things to know if you want to undo a simplification
 
-- The old per-method `DSkin_1_3` / `DSkin_1_5` matrix builders are at
-  commit `f39d43c~1`.
+- The legacy c-formulation matrix builders are at commit `7894746` and
+  earlier.
 - The old getter/setter parameter classes are at the same place if you
   ever need the validation patterns they encoded.
 - gzipped log file output (`zstr.h`) was dropped — if it comes back, it

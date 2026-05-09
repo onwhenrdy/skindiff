@@ -92,15 +92,17 @@ summary.skin_result <- function(object, ...) {
   if (length(mass_list) == 0L) {
     return(data.frame(time = numeric(0)))
   }
-  times <- mass_list[[1]]$time
-  cols <- list(time = times)
+  # Different series may have different lengths if a compartment was
+  # removed mid-run (the donor's series ends at remove_at, the layers and
+  # sink continue). Use the longest series as the canonical time grid and
+  # pad shorter ones with NA.
+  lengths <- vapply(mass_list, function(s) length(s$time), integer(1))
+  canonical <- mass_list[[which.max(lengths)]]$time
+  cols <- list(time = canonical)
   for (nm in names(mass_list)) {
     s <- mass_list[[nm]]
-    if (length(s$time) != length(times) || !isTRUE(all.equal(s$time, times))) {
-      stop(sprintf("Mass time vectors disagree for compartment '%s' -- log intervals must match.",
-                   nm), call. = FALSE)
-    }
-    cols[[nm]] <- s$value
+    matched <- match(canonical, s$time)
+    cols[[nm]] <- s$value[matched]
   }
   as.data.frame(cols, stringsAsFactors = FALSE, check.names = FALSE)
 }

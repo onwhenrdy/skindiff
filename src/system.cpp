@@ -182,6 +182,20 @@ namespace sc
         const auto& v   = m_parameters.vehicle;
         const auto& log = m_parameters.log;
 
+        // Snapshot the original compartment list. The series vectors stay
+        // aligned to this snapshot for the lifetime of the simulation; the
+        // active list (m_compartments + m_active_to_orig) can shrink when
+        // the donor is removed, but the series and names are preserved.
+        m_compartment_names.clear();
+        m_compartment_names.reserve(m_compartments.size());
+        for (const auto& c : m_compartments) m_compartment_names.push_back(c.name);
+
+        m_active_to_orig.resize(m_compartments.size());
+        for (std::size_t i = 0; i < m_compartments.size(); ++i)
+        {
+            m_active_to_orig[i] = static_cast<int>(i);
+        }
+
         m_mass_series.clear();
         m_cdp_series.clear();
         m_mass_series.resize(m_compartments.size());
@@ -214,15 +228,16 @@ namespace sc
     {
         for (std::size_t i = 0; i < m_compartments.size(); ++i)
         {
-            if (m_mass_series[i].should_log(t))
+            const auto orig = static_cast<std::size_t>(m_active_to_orig[i]);
+            if (m_mass_series[orig].should_log(t))
             {
-                m_mass_series[i].record(
+                m_mass_series[orig].record(
                     t, integrateMass(m_compartments[i], m_geometry, m_concentrations,
                                      m_K_per_cell, m_scale));
             }
-            if (m_cdp_series[i].should_log(t))
+            if (m_cdp_series[orig].should_log(t))
             {
-                m_cdp_series[i].record(
+                m_cdp_series[orig].record(
                     t, sampleProfile(m_compartments[i], m_concentrations, m_K_per_cell, m_scale));
             }
         }
@@ -248,9 +263,12 @@ namespace sc
         const auto top      = m_compartments.front();
         const auto top_size = top.geo_to + 1;
 
+        // Shrink the active compartment list and the active->original map.
+        // m_mass_series and m_cdp_series stay sized to the original
+        // compartment count -- the donor's recorded series is preserved
+        // in m_mass_series[0] / m_cdp_series[0] for the result.
         m_compartments.erase(m_compartments.begin());
-        if (!m_mass_series.empty()) m_mass_series.erase(m_mass_series.begin());
-        if (!m_cdp_series.empty())  m_cdp_series.erase(m_cdp_series.begin());
+        m_active_to_orig.erase(m_active_to_orig.begin());
 
         m_geometry.remove(top.geo_from, top.geo_to + 1);
 

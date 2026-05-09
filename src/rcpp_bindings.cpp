@@ -181,7 +181,7 @@ namespace
     };
 
     Rcpp::List massSeriesToList(const std::vector<MassSeries>& comp_series,
-                                const std::vector<Compartment>& compartments,
+                                const std::vector<std::string>& names,
                                 const MassSeries& sink_series, const std::string& sink_name)
     {
         Rcpp::List out;
@@ -191,7 +191,7 @@ namespace
             if (!s.enabled) continue;
             Rcpp::List entry = Rcpp::List::create(Rcpp::Named("time")  = s.times,
                                                   Rcpp::Named("value") = s.values);
-            out.push_back(entry, compartments[i].name);
+            out.push_back(entry, names[i]);
         }
         if (sink_series.enabled)
         {
@@ -203,7 +203,7 @@ namespace
     }
 
     Rcpp::List cdpToList(const std::vector<CdpSeries>& series,
-                         const std::vector<Compartment>& compartments)
+                         const std::vector<std::string>& names)
     {
         Rcpp::List out;
         for (std::size_t i = 0; i < series.size(); ++i)
@@ -227,7 +227,7 @@ namespace
             Rcpp::List entry = Rcpp::List::create(Rcpp::Named("time")     = s.times,
                                                   Rcpp::Named("depth_um") = s.depths_um,
                                                   Rcpp::Named("conc")     = conc);
-            out.push_back(entry, compartments[i].name);
+            out.push_back(entry, names[i]);
         }
         return out;
     }
@@ -287,8 +287,9 @@ Rcpp::List cpp_simulate(Rcpp::List params, bool show_progress = false)
     return Rcpp::List::create(
         Rcpp::Named("status")   = status_str,
         Rcpp::Named("scaling")  = std::string(toString(parms.log.scaling)),
-        Rcpp::Named("mass")     = massSeriesToList(sys.compartmentMass(), sys.compartments(),
+        Rcpp::Named("mass")     = massSeriesToList(sys.compartmentMass(),
+                                                   sys.compartmentNames(),
                                                    sys.sinkMass(), parms.sink.name),
-        Rcpp::Named("cdp")      = cdpToList(sys.cdp(), sys.compartments()),
+        Rcpp::Named("cdp")      = cdpToList(sys.cdp(), sys.compartmentNames()),
         Rcpp::Named("geometry") = geometryToList(sys.geometry()));
 }

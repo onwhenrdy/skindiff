@@ -6,8 +6,8 @@
 #  - replace_after resets every donor cell to c_init at t = k * replace_after.
 #  - remove_at deletes the donor compartment from the simulation; subsequent
 #    timesteps run on (skin layers + sink). The donor's recorded mass series
-#    is not surfaced in the result after removal -- a known limitation of
-#    the current logger indexing.
+#    is preserved up to the removal time (post-removal entries are NA in the
+#    result data.frame).
 
 base_params <- function(...) {
   defaults <- list(
@@ -86,12 +86,15 @@ test_that("remove_at deletes the donor and the sim continues", {
   )
   res <- skin_simulate(p)
 
-  # Donor's mass series isn't in the post-removal output (logger
-  # indexing limitation -- see test header). Skin and sink continue.
-  expect_false("Vehicle" %in% names(res$mass))
+  # Donor column is present, with real data up to remove_at and NA after.
+  expect_true("Vehicle" %in% names(res$mass))
   expect_true("SC" %in% names(res$mass))
   expect_true("Sink" %in% names(res$mass))
   expect_equal(nrow(res$mass), 61L)
+
+  # Vehicle has values for t = 0..29 (rows 1..30) and NA from row 31 on.
+  expect_true(all(is.finite(res$mass$Vehicle[1:30])))
+  expect_true(all(is.na(res$mass$Vehicle[31:61])))
 
   # Sink continues to accumulate from the SC reservoir even after the
   # donor is gone.
@@ -113,7 +116,10 @@ test_that("combined replace + remove reproduces example.R-style setup", {
   res <- skin_simulate(p)
 
   expect_equal(res$status, "executed")
-  expect_false("Vehicle" %in% names(res$mass))
+  # Donor present, with real values through removal then NA.
+  expect_true("Vehicle" %in% names(res$mass))
+  expect_true(all(is.finite(res$mass$Vehicle[1:90])))
+  expect_true(all(is.na(res$mass$Vehicle[91:121])))
   expect_equal(nrow(res$mass), 121L)
   expect_gt(tail(res$mass$Sink, 1), 0)
 })
